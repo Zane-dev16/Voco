@@ -11,7 +11,7 @@ struct TranslationView: View {
     @State private var viewModel: TranslationViewModel
 
     init(modelManager: ModelManagerService) {
-        _viewModel = State(wrappedValue: TranslationViewModel(modelManager: modelManager))
+        _viewModel = State(wrappedValue: TranslationViewModel(modelManager: modelManager, llamaService: LlamaService()))
     }
 
     var body: some View {

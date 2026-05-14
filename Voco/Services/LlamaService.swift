@@ -6,24 +6,30 @@
 //
 
 import Foundation
+import Observation
+
+#if canImport(LocalLLMClient) && !targetEnvironment(simulator)
 import LocalLLMClient
 import LocalLLMClientLlama
-import Observation
+#endif
 
 /// Manages GGUF model loading and text generation via llama.cpp.
 ///
-/// Wraps `LocalLLMClient` to provide a clean interface for
-/// on-device translation inference. Models are loaded from
-/// local GGUF files managed by `ModelManagerService`.
+/// On device: wraps `LocalLLMClient` for real inference.
+/// On simulator: provides stub for UI testing.
 @Observable
 @MainActor
 final class LlamaService {
+    #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
     private var session: LLMSession?
     private var currentModelID: String?
+    #else
+    private var currentModelID: String?
+    #endif
 
     /// Whether a model is currently loaded and ready for inference.
     var isModelLoaded: Bool {
-        session != nil
+        currentModelID != nil
     }
 
     /// The ID of the currently loaded model, if any.
@@ -31,6 +37,7 @@ final class LlamaService {
         currentModelID
     }
 
+    #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
     /// Parameters for model inference.
     private let parameters: LlamaClient.Parameter
 
@@ -42,24 +49,19 @@ final class LlamaService {
     )) {
         self.parameters = parameters
     }
+    #else
+    init() {}
+    #endif
 
     // MARK: - Model Lifecycle
 
     /// Loads a GGUF model from a local file URL.
-    ///
-    /// If a different model is already loaded, it is released first.
-    /// - Parameters:
-    ///   - url: File URL pointing to the `.gguf` file.
-    ///   - modelID: A string identifier for tracking which model is loaded.
     func loadModel(at url: URL, modelID: String) async throws {
-        // Skip if same model already loaded
-        if currentModelID == modelID, session != nil {
-            return
-        }
+        if currentModelID == modelID { return }
 
-        // Release previous model
         unloadModel()
 
+        #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
         let localModel = LLMSession.LocalModel.llama(
             url: url,
             parameter: parameters
@@ -68,68 +70,79 @@ final class LlamaService {
         newSession.messages = [
             .system("You are a professional translator. Translate the user's text accurately and naturally. Output ONLY the translated text with no explanations, notes, or additional content.")
         ]
-
-        // Prewarm to load model into memory
         try await newSession.prewarm()
-
         self.session = newSession
+        #endif
+
         self.currentModelID = modelID
     }
 
     /// Releases the currently loaded model to free memory.
     func unloadModel() {
+        #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
         session = nil
+        #endif
         currentModelID = nil
     }
 
     // MARK: - Translation
 
     /// Translates text using the loaded model.
-    ///
-    /// - Parameters:
-    ///   - text: The source text to translate.
-    ///   - sourceLanguage: The source language name (e.g. "English").
-    ///   - targetLanguage: The target language name (e.g. "Spanish").
-    /// - Returns: The translated text.
     func translate(
         _ text: String,
         from sourceLanguage: String,
         to targetLanguage: String
     ) async throws -> String {
-        guard let session else {
+        guard currentModelID != nil else {
             throw LlamaError.noModelLoaded
         }
 
+        #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
+        guard let session else {
+            throw LlamaError.noModelLoaded
+        }
         let prompt = "Translate the following text from \(sourceLanguage) to \(targetLanguage). Output ONLY the translation:\n\n\(text)"
-
         let response = try await session.respond(to: prompt)
         return response.trimmingCharacters(in: .whitespacesAndNewlines)
+        #else
+        // Simulator stub — return placeholder
+        return "[Simulator stub: \(sourceLanguage) → \(targetLanguage)] \(text)"
+        #endif
     }
 
     /// Translates text with streaming token generation.
-    ///
-    /// Returns an `AsyncThrowingStream` that yields translation tokens
-    /// as they are generated, enabling real-time UI updates.
-    ///
-    /// - Parameters:
-    ///   - text: The source text to translate.
-    ///   - sourceLanguage: The source language name (e.g. "English").
-    ///   - targetLanguage: The target language name (e.g. "Spanish").
-    /// - Returns: A stream of translated text chunks.
     func translateStream(
         _ text: String,
         from sourceLanguage: String,
         to targetLanguage: String
     ) -> AsyncThrowingStream<String, any Error> {
-        guard let session else {
+        guard currentModelID != nil else {
             return AsyncThrowingStream { continuation in
                 continuation.finish(throwing: LlamaError.noModelLoaded)
             }
         }
 
+        #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
+        guard let session else {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: LlamaError.noModelLoaded)
+            }
+        }
         let prompt = "Translate the following text from \(sourceLanguage) to \(targetLanguage). Output ONLY the translation:\n\n\(text)"
-
         return session.streamResponse(to: prompt)
+        #else
+        // Simulator stub — yield placeholder tokens
+        return AsyncThrowingStream { continuation in
+            Task {
+                let stub = "[Simulator: \(sourceLanguage) → \(targetLanguage)] \(text)"
+                for char in stub {
+                    continuation.yield(String(char))
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                continuation.finish()
+            }
+        }
+        #endif
     }
 }
 

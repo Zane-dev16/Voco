@@ -37,7 +37,7 @@ final class TranslationViewModel {
 
     init(
         modelManager: ModelManagerService,
-        llamaService: LlamaService = LlamaService()
+        llamaService: LlamaService,
     ) {
         self.modelManager = modelManager
         self.llamaService = llamaService

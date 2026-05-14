@@ -18,7 +18,7 @@ final class ModelManagerViewModel {
     var alertMessage: String?
     var showAlert = false
 
-    init(modelManager: ModelManagerService = .init()) {
+    init(modelManager: ModelManagerService) {
         self.modelManager = modelManager
     }
 
