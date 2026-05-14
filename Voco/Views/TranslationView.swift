@@ -11,7 +11,7 @@ struct TranslationView: View {
     @State private var viewModel: TranslationViewModel
 
     init(modelManager: ModelManagerService) {
-        _viewModel = State(wrappedValue: TranslationViewModel(modelManager: modelManager))
+        _viewModel = State(wrappedValue: TranslationViewModel(modelManager: modelManager, llamaService: LlamaService()))
     }
 
     var body: some View {
@@ -75,7 +75,15 @@ struct TranslationView: View {
                         .foregroundStyle(.tertiary)
                         .padding(12)
                 }
-                if viewModel.isTranslating {
+                if viewModel.isModelLoading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text(viewModel.modelLoadProgress ?? "Loading model...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                } else if viewModel.isTranslating {
                     ProgressView().padding(12)
                 }
             }
@@ -88,9 +96,9 @@ struct TranslationView: View {
 
     private var translateButton: some View {
         Button {
-            Task { await viewModel.translate() }
+            viewModel.startTranslation()
         } label: {
-            Text("Translate")
+            Text(viewModel.isModelLoading ? "Loading Model..." : "Translate")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
@@ -113,7 +121,7 @@ struct LanguagePicker: View {
             Text(title).font(.caption).foregroundStyle(.secondary)
             Picker(title, selection: $selection) {
                 ForEach(Language.allCases) { lang in
-                    Text("\\(lang.flag) \\(lang.displayName)").tag(lang)
+                    Text("\(lang.flag) \(lang.displayName)").tag(lang)
                 }
             }
             .pickerStyle(.menu)

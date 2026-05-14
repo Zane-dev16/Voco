@@ -83,17 +83,15 @@ final class TranslationViewModel {
             if llamaService.loadedModelID != model.id {
                 isModelLoading = true
                 modelLoadProgress = "Loading \(model.displayName)..."
+                defer { isModelLoading = false; modelLoadProgress = nil }
 
                 guard let modelURL = modelManager.localURL(for: model) else {
                     errorMessage = "Model file not found. Please re-download."
                     showError = true
-                    isModelLoading = false
-                    return
+                    return  // defer will reset isModelLoading
                 }
 
                 try await llamaService.loadModel(at: modelURL, modelID: model.id)
-                isModelLoading = false
-                modelLoadProgress = nil
             }
 
             // Stream translation
@@ -109,7 +107,7 @@ final class TranslationViewModel {
                 translatedText = (translatedText ?? "") + token
             }
         } catch is CancellationError {
-            // Translation was cancelled \u2014 keep partial result
+            // Translation was cancelled — keep partial result
         } catch {
             isModelLoading = false
             modelLoadProgress = nil
