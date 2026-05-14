@@ -121,7 +121,7 @@ struct LanguagePicker: View {
             Text(title).font(.caption).foregroundStyle(.secondary)
             Picker(title, selection: $selection) {
                 ForEach(Language.allCases) { lang in
-                    Text("\\(lang.flag) \\(lang.displayName)").tag(lang)
+                    Text("\(lang.flag) \(lang.displayName)").tag(lang)
                 }
             }
             .pickerStyle(.menu)

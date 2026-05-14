@@ -87,6 +87,15 @@ final class LlamaService {
 
     // MARK: - Translation
 
+    /// Builds the translation prompt for the model.
+    private func buildPrompt(
+        _ text: String,
+        from sourceLanguage: String,
+        to targetLanguage: String
+    ) -> String {
+        "Translate the following text from \(sourceLanguage) to \(targetLanguage). Output ONLY the translation:\n\n\(text)"
+    }
+
     /// Translates text using the loaded model.
     func translate(
         _ text: String,
@@ -101,7 +110,7 @@ final class LlamaService {
         guard let session else {
             throw LlamaError.noModelLoaded
         }
-        let prompt = "Translate the following text from \(sourceLanguage) to \(targetLanguage). Output ONLY the translation:\n\n\(text)"
+        let prompt = buildPrompt(text, from: sourceLanguage, to: targetLanguage)
         let response = try await session.respond(to: prompt)
         return response.trimmingCharacters(in: .whitespacesAndNewlines)
         #else
@@ -128,7 +137,7 @@ final class LlamaService {
                 continuation.finish(throwing: LlamaError.noModelLoaded)
             }
         }
-        let prompt = "Translate the following text from \(sourceLanguage) to \(targetLanguage). Output ONLY the translation:\n\n\(text)"
+        let prompt = buildPrompt(text, from: sourceLanguage, to: targetLanguage)
         return session.streamResponse(to: prompt)
         #else
         // Simulator stub — yield placeholder tokens
@@ -150,17 +159,11 @@ final class LlamaService {
 
 enum LlamaError: LocalizedError {
     case noModelLoaded
-    case modelLoadFailed(String)
-    case translationFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .noModelLoaded:
             return "No model loaded. Download and select a model first."
-        case .modelLoadFailed(let reason):
-            return "Failed to load model: \(reason)"
-        case .translationFailed(let reason):
-            return "Translation failed: \(reason)"
         }
     }
 }
