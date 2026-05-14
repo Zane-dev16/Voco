@@ -75,7 +75,15 @@ struct TranslationView: View {
                         .foregroundStyle(.tertiary)
                         .padding(12)
                 }
-                if viewModel.isTranslating {
+                if viewModel.isModelLoading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text(viewModel.modelLoadProgress ?? "Loading model...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                } else if viewModel.isTranslating {
                     ProgressView().padding(12)
                 }
             }
@@ -90,7 +98,7 @@ struct TranslationView: View {
         Button {
             Task { await viewModel.translate() }
         } label: {
-            Text("Translate")
+            Text(viewModel.isModelLoading ? "Loading Model..." : "Translate")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
