@@ -12,18 +12,38 @@ import Observation
 @MainActor
 final class TranslationViewModel {
     private let modelManager: ModelManagerService
+    private let llamaService: LlamaService
+    private var translationTask: Task<Void, Never>?
 
     var sourceLanguage: Language = .english
     var targetLanguage: Language = .spanish
     var inputText: String = ""
     var translatedText: String?
     var isTranslating = false
+    var isModelLoading = false
+    var modelLoadProgress: String?
     var errorMessage: String?
     var showError = false
 
-    init(modelManager: ModelManagerService) {
-        self.modelManager = modelManager
+    /// The currently active model for translation, if any.
+    var activeModel: TranslationModel? {
+        compatibleModel()
     }
+
+    /// Whether a compatible model is downloaded and ready.
+    var hasCompatibleModel: Bool {
+        compatibleModel() != nil
+    }
+
+    init(
+        modelManager: ModelManagerService,
+        llamaService: LlamaService,
+    ) {
+        self.modelManager = modelManager
+        self.llamaService = llamaService
+    }
+
+    // MARK: - Actions
 
     func swapLanguages() {
         let temp = sourceLanguage
@@ -35,7 +55,84 @@ final class TranslationViewModel {
         }
     }
 
-    func compatibleModel() -> TranslationModel? {
+    /// Starts translation as a managed task.
+    func startTranslation() {
+        translationTask?.cancel()
+        translationTask = Task { await translate() }
+    }
+
+    /// Loads the compatible model and runs translation with streaming.
+    private func translate() async {
+        guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            translatedText = nil
+            return
+        }
+
+        guard let model = compatibleModel() else {
+            errorMessage = "No model downloaded for \(sourceLanguage.displayName) to \(targetLanguage.displayName). Download one from Models."
+            showError = true
+            return
+        }
+
+        isTranslating = true
+        translatedText = ""
+        defer { isTranslating = false }
+
+        do {
+            // Load model if not already loaded
+            if llamaService.loadedModelID != model.id {
+                isModelLoading = true
+                modelLoadProgress = "Loading \(model.displayName)..."
+
+                guard let modelURL = modelManager.localURL(for: model) else {
+                    errorMessage = "Model file not found. Please re-download."
+                    showError = true
+                    isModelLoading = false
+                    return
+                }
+
+                try await llamaService.loadModel(at: modelURL, modelID: model.id)
+                isModelLoading = false
+                modelLoadProgress = nil
+            }
+
+            // Stream translation
+            let stream = llamaService.translateStream(
+                inputText,
+                from: sourceLanguage.displayName,
+                to: targetLanguage.displayName
+            )
+
+            for try await token in stream {
+                // Check for cancellation
+                if Task.isCancelled { break }
+                translatedText = (translatedText ?? "") + token
+            }
+        } catch is CancellationError {
+            // Translation was cancelled \u2014 keep partial result
+        } catch {
+            isModelLoading = false
+            modelLoadProgress = nil
+            errorMessage = error.localizedDescription
+            showError = true
+            translatedText = nil
+        }
+    }
+
+    /// Cancels any in-progress translation.
+    func cancelTranslation() {
+        translationTask?.cancel()
+        translationTask = nil
+    }
+
+    /// Unloads the current model to free memory.
+    func unloadModel() {
+        llamaService.unloadModel()
+    }
+
+    // MARK: - Private
+
+    private func compatibleModel() -> TranslationModel? {
         for model in TranslationModel.availableModels {
             if model.supportedLanguages.contains(sourceLanguage) &&
                 model.supportedLanguages.contains(targetLanguage) &&
@@ -44,25 +141,5 @@ final class TranslationViewModel {
             }
         }
         return nil
-    }
-
-    func translate() async {
-        guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            translatedText = nil
-            return
-        }
-
-        guard compatibleModel() != nil else {
-            errorMessage = "No model downloaded for \\(sourceLanguage.displayName) to \\(targetLanguage.displayName). Download one from Models."
-            showError = true
-            return
-        }
-
-        isTranslating = true
-        defer { isTranslating = false }
-
-        // TODO: Wire to actual GGUF model inference via llama-cpp
-        try? await Task.sleep(for: .milliseconds(500))
-        translatedText = "[Translation placeholder - inference not yet wired]"
     }
 }
