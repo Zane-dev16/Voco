@@ -177,6 +177,14 @@ final class SpeechService {
         recognitionRequest?.endAudio()
         recognitionRequest = nil
         recognitionTask = nil
+
+        // Deactivate audio session — release the hardware lock so other apps can use it.
+        do {
+            try AVAudioSession.sharedInstance().setActive(false)
+        } catch {
+            // Log but don't throw — recording is stopping regardless.
+            print("[SpeechService] Failed to deactivate audio session: \(error)")
+        }
     }
 
     // MARK: - One-Shot Transcription
@@ -190,7 +198,11 @@ final class SpeechService {
             request.requiresOnDeviceRecognition = true
 
             recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
-                guard let self else { return }
+                guard let self else {
+                    // Service deallocated mid-task — resume to prevent continuation leak.
+                    continuation.resume(throwing: SpeechRecognitionError.notAvailable)
+                    return
+                }
 
                 if let error {
                     self.recognitionTask = nil
