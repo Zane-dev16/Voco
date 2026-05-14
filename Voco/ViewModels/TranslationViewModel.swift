@@ -111,6 +111,8 @@ final class TranslationViewModel {
         } catch is CancellationError {
             // Translation was cancelled — keep partial result
         } catch {
+            isModelLoading = false
+            modelLoadProgress = nil
             errorMessage = error.localizedDescription
             showError = true
             translatedText = nil
