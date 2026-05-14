@@ -13,6 +13,7 @@ import Observation
 final class ModelManagerService {
     var downloadStates: [String: DownloadState] = [:]
     private var downloadTasks: [String: URLSessionDownloadTask] = [:]
+    private let session: URLSession
 
     private let modelsDirectory: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -20,6 +21,8 @@ final class ModelManagerService {
     }()
 
     init() {
+        let config = URLSessionConfiguration.default
+        session = URLSession(configuration: config, delegate: DownloadDelegate.shared, delegateQueue: nil)
         ensureModelsDirectoryExists()
         scanExistingModels()
     }
@@ -28,14 +31,13 @@ final class ModelManagerService {
         guard downloadTasks[model.id] == nil else { return }
         downloadStates[model.id] = .downloading(progress: 0)
 
-        let session = URLSession(configuration: .default, delegate: nil, delegateQueue: nil)
         let request = URLRequest(url: model.sourceURL)
         let task = session.downloadTask(with: request)
         let modelID = model.id
         let targetURL = modelsDirectory.appendingPathComponent(model.filename)
 
-        DownloadDelegate.store(
-            for: modelID, session: session, destination: targetURL,
+        DownloadDelegate.shared.register(
+            for: modelID, task: task, destination: targetURL,
             onProgress: { [weak self] progress in
                 Task { @MainActor in
                     self?.downloadStates[modelID] = .downloading(progress: progress)
@@ -46,8 +48,12 @@ final class ModelManagerService {
                     switch result {
                     case .success(let url):
                         self?.downloadStates[modelID] = .processing
-                        try? FileManager.default.moveItem(at: url, to: targetURL)
-                        self?.downloadStates[modelID] = .downloaded
+                        do {
+                            try FileManager.default.moveItem(at: url, to: targetURL)
+                            self?.downloadStates[modelID] = .downloaded
+                        } catch {
+                            self?.downloadStates[modelID] = .failed("Failed to save model: \(error.localizedDescription)")
+                        }
                     case .failure(let error):
                         self?.downloadStates[modelID] = .failed(error.localizedDescription)
                     }
@@ -61,7 +67,7 @@ final class ModelManagerService {
     }
 
     func cancelDownload(for modelID: String) {
-        downloadTasks[modelID]?.cancel(byProducingResumeData: nil)
+        downloadTasks[modelID]?.cancel()
         downloadTasks.removeValue(forKey: modelID)
         downloadStates[modelID] = .notDownloaded
     }
@@ -108,33 +114,37 @@ final class ModelManagerService {
     }
 }
 
-private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
-    private let onProgress: (Double) -> Void
-    private let onComplete: (Result<URL, Error>) -> Void
-    private let destination: URL
+private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLSessionTaskDelegate {
+    static let shared = DownloadDelegate()
 
-    static func store(for modelID: String, session: URLSession, destination: URL, onProgress: @escaping (Double) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
-        let delegate = DownloadDelegate(destination: destination, onProgress: onProgress, onComplete: onComplete)
-        session.delegate = delegate
-        objc_setAssociatedObject(session, Unmanaged.passUnretained(delegate).toOpaque(), delegate, .OBJC_ASSOCIATION_RETAIN)
+    private var handlers: [Int: DownloadHandler] = [:]
+
+    private struct DownloadHandler {
+        let destination: URL
+        let onProgress: (Double) -> Void
+        let onComplete: (Result<URL, Error>) -> Void
     }
 
-    private init(destination: URL, onProgress: @escaping (Double) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
-        self.destination = destination
-        self.onProgress = onProgress
-        self.onComplete = onComplete
+    func register(for modelID: String, task: URLSessionDownloadTask, destination: URL, onProgress: @escaping (Double) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
+        handlers[task.taskIdentifier] = DownloadHandler(destination: destination, onProgress: onProgress, onComplete: onComplete)
     }
+
+    // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        onComplete(.success(location))
+        handlers[downloadTask.taskIdentifier]?.onComplete(.success(location))
+        handlers.removeValue(forKey: downloadTask.taskIdentifier)
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else { return }
-        onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        handlers[downloadTask.taskIdentifier]?.onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error { onComplete(.failure(error)) }
+        if let error {
+            handlers[task.taskIdentifier]?.onComplete(.failure(error))
+            handlers.removeValue(forKey: task.taskIdentifier)
+        }
     }
 }

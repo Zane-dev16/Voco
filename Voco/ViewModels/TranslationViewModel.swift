@@ -21,7 +21,7 @@ final class TranslationViewModel {
     var errorMessage: String?
     var showError = false
 
-    init(modelManager: ModelManagerService = .init()) {
+    init(modelManager: ModelManagerService) {
         self.modelManager = modelManager
     }
 
@@ -33,17 +33,6 @@ final class TranslationViewModel {
             inputText = output
             translatedText = nil
         }
-    }
-
-    func hasCompatibleModel() -> Bool {
-        for model in TranslationModel.availableModels {
-            if model.supportedLanguages.contains(sourceLanguage) &&
-                model.supportedLanguages.contains(targetLanguage) &&
-                modelManager.isModelDownloaded(model) {
-                return true
-            }
-        }
-        return false
     }
 
     func compatibleModel() -> TranslationModel? {
@@ -63,7 +52,7 @@ final class TranslationViewModel {
             return
         }
 
-        guard hasCompatibleModel() else {
+        guard compatibleModel() != nil else {
             errorMessage = "No model downloaded for \\(sourceLanguage.displayName) to \\(targetLanguage.displayName). Download one from Models."
             showError = true
             return
