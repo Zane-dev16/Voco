@@ -96,7 +96,7 @@ struct TranslationView: View {
 
     private var translateButton: some View {
         Button {
-            Task { await viewModel.translate() }
+            viewModel.startTranslation()
         } label: {
             Text(viewModel.isModelLoading ? "Loading Model..." : "Translate")
                 .font(.headline)

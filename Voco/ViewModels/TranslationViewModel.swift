@@ -55,8 +55,14 @@ final class TranslationViewModel {
         }
     }
 
+    /// Starts translation as a managed task.
+    func startTranslation() {
+        translationTask?.cancel()
+        translationTask = Task { await translate() }
+    }
+
     /// Loads the compatible model and runs translation with streaming.
-    func translate() async {
+    private func translate() async {
         guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             translatedText = nil
             return
@@ -67,9 +73,6 @@ final class TranslationViewModel {
             showError = true
             return
         }
-
-        // Cancel any in-flight translation
-        translationTask?.cancel()
 
         isTranslating = true
         translatedText = ""
