@@ -48,10 +48,19 @@ final class ModelManagerService {
                     switch result {
                     case .success(let url):
                         self?.downloadStates[modelID] = .processing
+                        // Ensure the Models directory exists (may have been cleared)
+                        self?.ensureModelsDirectoryExists()
+                        let fm = FileManager.default
                         do {
-                            try FileManager.default.moveItem(at: url, to: targetURL)
+                            // Remove existing file if present (re-download scenario)
+                            if fm.fileExists(atPath: targetURL.path) {
+                                try fm.removeItem(at: targetURL)
+                            }
+                            // Move temp download to final location
+                            try fm.moveItem(at: url, to: targetURL)
                             self?.downloadStates[modelID] = .downloaded
                         } catch {
+                            print("[ModelManager] Failed to save model \(modelID): \(error)")
                             self?.downloadStates[modelID] = .failed("Failed to save model: \(error.localizedDescription)")
                         }
                     case .failure(let error):
@@ -101,7 +110,17 @@ final class ModelManagerService {
     }
 
     private func ensureModelsDirectoryExists() {
-        try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let vocoDir = appSupport.appendingPathComponent("Voco")
+        // Create Voco/ and Voco/Models/ — ensure all intermediates
+        try? fm.createDirectory(at: vocoDir, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+        // Verify: if still missing, try with explicit intermediate creation
+        if !fm.fileExists(atPath: modelsDirectory.path) {
+            print("[ModelManager] WARN: Models directory missing after creation, retrying...")
+            try? fm.createDirectory(atPath: appSupport.appendingPathComponent("Voco/Models").path, withIntermediateDirectories: true)
+        }
     }
 
     private func scanExistingModels() {
