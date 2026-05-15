@@ -121,6 +121,7 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
 
     private struct DownloadHandler {
         let destination: URL
+        var location: URL?
         let onProgress: (Double) -> Void
         let onComplete: (Result<URL, Error>) -> Void
     }
@@ -132,8 +133,8 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
     // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        handlers[downloadTask.taskIdentifier]?.onComplete(.success(location))
-        handlers.removeValue(forKey: downloadTask.taskIdentifier)
+        // Store the location — the completion callback fires via didCompleteWithError
+        handlers[downloadTask.taskIdentifier]?.location = location
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
@@ -142,9 +143,11 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let handler = handlers.removeValue(forKey: task.taskIdentifier) else { return }
         if let error {
-            handlers[task.taskIdentifier]?.onComplete(.failure(error))
-            handlers.removeValue(forKey: task.taskIdentifier)
+            handler.onComplete(.failure(error))
+        } else if let location = handler.location {
+            handler.onComplete(.success(location))
         }
     }
 }

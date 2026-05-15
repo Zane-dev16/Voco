@@ -106,9 +106,8 @@ final class TranslationViewModel {
                 if Task.isCancelled { break }
                 translatedText = (translatedText ?? "") + token
             }
-        } catch is CancellationError {
-            // Translation was cancelled — keep partial result
         } catch {
+            // Non-cancellation error — reset model loading state and report
             isModelLoading = false
             modelLoadProgress = nil
             errorMessage = error.localizedDescription
