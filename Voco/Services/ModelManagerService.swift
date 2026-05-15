@@ -11,7 +11,7 @@ import Observation
 @Observable
 @MainActor
 final class ModelManagerService {
-    var downloadStates: [String: DownloadState] = [:]
+    private(set) var downloadStates: [String: DownloadState] = [:]
     private var downloadTasks: [String: URLSessionDownloadTask] = [:]
     private let session: URLSession
 
@@ -67,9 +67,10 @@ final class ModelManagerService {
     }
 
     func cancelDownload(for modelID: String) {
-        downloadTasks[modelID]?.cancel()
-        downloadTasks.removeValue(forKey: modelID)
+        let task = downloadTasks.removeValue(forKey: modelID)
         downloadStates[modelID] = .notDownloaded
+        // Mark handler as cancelled so didCompleteWithError ignores the error callback
+        DownloadDelegate.shared.cancel(task: task)
     }
 
     func deleteModel(_ model: TranslationModel) throws {
@@ -122,12 +123,22 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
     private struct DownloadHandler {
         let destination: URL
         var location: URL?
+        var isCancelled = false
         let onProgress: (Double) -> Void
         let onComplete: (Result<URL, Error>) -> Void
     }
 
     func register(for modelID: String, task: URLSessionDownloadTask, destination: URL, onProgress: @escaping (Double) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
         handlers[task.taskIdentifier] = DownloadHandler(destination: destination, onProgress: onProgress, onComplete: onComplete)
+    }
+
+    func cancel(task: URLSessionDownloadTask?) {
+        task?.cancel()
+        if let task, let handler = handlers[task.taskIdentifier] {
+            var updated = handler
+            updated.isCancelled = true
+            handlers[task.taskIdentifier] = updated
+        }
     }
 
     // MARK: - URLSessionDownloadDelegate
@@ -144,6 +155,8 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let handler = handlers.removeValue(forKey: task.taskIdentifier) else { return }
+        // Cancellation is intentional — skip the error callback
+        if handler.isCancelled { return }
         if let error {
             handler.onComplete(.failure(error))
         } else if let location = handler.location {

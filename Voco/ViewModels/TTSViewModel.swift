@@ -59,7 +59,7 @@ final class TTSViewModel {
     // MARK: - Dependencies
 
     private let service: TTSService
-    private var cancellables = Set<AnyCancellable>()
+    private var cancellables: Set<AnyCancellable> = []
 
     // MARK: - Init
 

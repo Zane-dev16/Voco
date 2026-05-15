@@ -50,7 +50,8 @@ final class LlamaService {
         self.parameters = parameters
     }
     #else
-    init() {}
+    /// On simulator, parameters are ignored (stub only).
+    init(parameters: Void = ()) { _ = parameters }
     #endif
 
     // MARK: - Model Lifecycle
@@ -110,6 +111,10 @@ final class LlamaService {
         guard let session else {
             throw LlamaError.noModelLoaded
         }
+        // Reset to system prompt only — each translation is stateless
+        session.messages = [
+            .system("You are a professional translator. Translate the user's text accurately and naturally. Output ONLY the translated text with no explanations, notes, or additional content.")
+        ]
         let prompt = buildPrompt(text, from: sourceLanguage, to: targetLanguage)
         let response = try await session.respond(to: prompt)
         return response.trimmingCharacters(in: .whitespacesAndNewlines)

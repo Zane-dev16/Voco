@@ -38,7 +38,9 @@ struct TranslationView: View {
             Text(viewModel.errorMessage ?? "")
         }
         .alert("Speech Error", isPresented: $showSpeechError) {
-            Button("OK", role: .cancel) {}
+            Button("OK", role: .cancel) {
+                speechVM.errorMessage = nil
+            }
         } message: {
             Text(speechVM.errorMessage ?? "")
         }
@@ -118,7 +120,6 @@ struct TranslationView: View {
                 .background(speechVM.isRecording ? Color.red.opacity(0.2) : Color.gray.opacity(0.2))
                 .clipShape(Circle())
         }
-        .disabled(!speechVM.permissionsGranted && !speechVM.isRecording)
         .accessibilityLabel(speechVM.isRecording ? "Stop recording" : "Start voice input")
     }
 
