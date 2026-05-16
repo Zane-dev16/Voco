@@ -2,20 +2,33 @@
 //  TranslationModel.swift
 //  Voco
 //
-//  Created by Irell Zane on 14/05/2026.
+//  Modular model registry. Adding a new model is a single entry
+//  in the registry array below — no other files need changing.
 //
 
 import Foundation
 
-struct TranslationModel: Identifiable, Hashable {
+// MARK: - Device Capability
+
+enum DeviceCapability: String, Sendable {
+    case simulatorAndDevice = "Works on simulator & device"
+    case deviceRecommended = "Best on physical device"
+}
+
+// MARK: - TranslationModel
+
+struct TranslationModel: Identifiable, Hashable, Sendable {
     let id: String
     let displayName: String
     let description: String
+    let provider: String
     let sourceURL: URL
     let fileSizeBytes: Int64
     let supportedLanguages: [Language]
-    let hfModel: String
+    let hfRepo: String
     let quantization: String
+    let config: ModelConfiguration
+    let capability: DeviceCapability
 
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: fileSizeBytes, countStyle: .file)
@@ -26,37 +39,63 @@ struct TranslationModel: Identifiable, Hashable {
     }
 }
 
+// MARK: - Model Registry
+
 extension TranslationModel {
+
+    /// Central registry of all downloadable models.
+    /// To add a model, append a new `TranslationModel(...)` entry here.
     static let availableModels: [TranslationModel] = [
-        TranslationModel(
-            id: "hunyuan-1.5b-q4km",
-            displayName: "Tencent Hunyuan 1.5B",
-            description: "Tencent's compact multilingual translation model. Fast on-device translation for 12 languages.",
-            sourceURL: URL(string: "https://huggingface.co/tencent/Hunyuan-Translation-1.5B-Instruct-GGUF/resolve/main/Hunyuan-Translation-1.5B-Instruct-Q4_K_M.gguf")!,
-            fileSizeBytes: 1_073_741_824,
-            supportedLanguages: Language.allCases,
-            hfModel: "tencent/Hunyuan-Translation-1.5B-Instruct-GGUF",
-            quantization: "Q4_K_M"
-        ),
-        TranslationModel(
-            id: "gemma-3-1b-q4km",
-            displayName: "Google Gemma 3 1B",
-            description: "Google's lightweight Gemma 3 model. Good general translation quality with strong English performance.",
-            sourceURL: URL(string: "https://huggingface.co/google/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf")!,
-            fileSizeBytes: 900_000_000,
-            supportedLanguages: [.english, .spanish, .french, .german, .portuguese, .chinese, .japanese, .korean],
-            hfModel: "google/gemma-3-1b-it-GGUF",
-            quantization: "Q4_K_M"
-        ),
+
+        // ------------------------------------------------------------------
+        // 1. Alibaba Qwen3 0.6B — verified working on simulator
+        // ------------------------------------------------------------------
         TranslationModel(
             id: "qwen3-0.6b-q4km",
-            displayName: "Alibaba Qwen3 0.6B",
-            description: "Ultra-compact Qwen3 model. Fastest option, ideal for quick translations on any device.",
+            displayName: "Qwen3 0.6B",
+            description: "Ultra-compact multilingual model. Fastest and most reliable on any device.",
+            provider: "Alibaba",
             sourceURL: URL(string: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf")!,
-            fileSizeBytes: 500_000_000,
+            fileSizeBytes: 396_705_472,
             supportedLanguages: [.english, .spanish, .french, .german, .italian, .portuguese, .chinese, .japanese, .korean, .arabic, .hindi, .russian],
-            hfModel: "unsloth/Qwen3-0.6B-GGUF",
-            quantization: "Q4_K_M"
+            hfRepo: "unsloth/Qwen3-0.6B-GGUF",
+            quantization: "Q4_K_M",
+            config: .compact,
+            capability: .simulatorAndDevice
+        ),
+
+        // ------------------------------------------------------------------
+        // 2. Tencent Hunyuan 0.5B — small enough for simulator
+        // ------------------------------------------------------------------
+        TranslationModel(
+            id: "hunyuan-0.5b-q3km",
+            displayName: "Tencent Hunyuan 0.5B",
+            description: "Tencent's compact instruction-tuned model. Good quality for its size.",
+            provider: "Tencent",
+            sourceURL: URL(string: "https://huggingface.co/bartowski/tencent_Hunyuan-0.5B-Instruct-GGUF/resolve/main/tencent_Hunyuan-0.5B-Instruct-Q3_K_M.gguf")!,
+            fileSizeBytes: 307_669_856,
+            supportedLanguages: Language.allCases,
+            hfRepo: "bartowski/tencent_Hunyuan-0.5B-Instruct-GGUF",
+            quantization: "Q3_K_M",
+            config: .compact,
+            capability: .simulatorAndDevice
+        ),
+
+        // ------------------------------------------------------------------
+        // 3. Google Gemma 3 1B — larger, best on physical device
+        // ------------------------------------------------------------------
+        TranslationModel(
+            id: "gemma-3-1b-q2k",
+            displayName: "Google Gemma 3 1B",
+            description: "Google's latest lightweight model. High quality but requires more RAM. Use on physical device for best experience.",
+            provider: "Google",
+            sourceURL: URL(string: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q2_K.gguf")!,
+            fileSizeBytes: 689_814_560,
+            supportedLanguages: [.english, .spanish, .french, .german, .italian, .portuguese, .chinese, .japanese, .korean, .russian],
+            hfRepo: "unsloth/gemma-3-1b-it-GGUF",
+            quantization: "Q2_K",
+            config: .standard,
+            capability: .deviceRecommended
         )
     ]
 }
