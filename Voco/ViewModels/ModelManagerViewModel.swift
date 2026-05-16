@@ -44,6 +44,8 @@ final class ModelManagerViewModel {
     }
 
     var formattedDiskUsage: String {
-        ByteCountFormatter.string(fromByteCount: modelManager.totalDiskUsage(), countStyle: .file)
+        // Touch downloadStates to establish observation tracking
+        _ = modelManager.downloadStates
+        return ByteCountFormatter.string(fromByteCount: modelManager.totalDiskUsage(), countStyle: .file)
     }
 }

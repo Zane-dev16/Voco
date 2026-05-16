@@ -10,9 +10,10 @@ import SwiftUI
 struct ContentView: View {
     @State private var viewModel = RootViewModel()
     @State private var modelManager = ModelManagerService()
+    @State private var path: [AppRoute] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack(spacing: 24) {
                 Image(systemName: "globe")
                     .imageScale(.large)
@@ -36,6 +37,13 @@ struct ContentView: View {
             }
             .padding()
             .navigationTitle("Voco")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: AppRoute.models) {
+                        Label("Models", systemImage: "square.stack.3d.up")
+                    }
+                }
+            }
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
                 case .translation:

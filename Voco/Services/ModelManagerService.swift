@@ -47,21 +47,10 @@ final class ModelManagerService {
                 Task { @MainActor in
                     switch result {
                     case .success(let url):
-                        self?.downloadStates[modelID] = .processing
-                        // Ensure the Models directory exists (may have been cleared)
-                        self?.ensureModelsDirectoryExists()
-                        let fm = FileManager.default
-                        do {
-                            // Remove existing file if present (re-download scenario)
-                            if fm.fileExists(atPath: targetURL.path) {
-                                try fm.removeItem(at: targetURL)
-                            }
-                            // Move temp download to final location
-                            try fm.moveItem(at: url, to: targetURL)
+                        if FileManager.default.fileExists(atPath: url.path) {
                             self?.downloadStates[modelID] = .downloaded
-                        } catch {
-                            print("[ModelManager] Failed to save model \(modelID): \(error)")
-                            self?.downloadStates[modelID] = .failed("Failed to save model: \(error.localizedDescription)")
+                        } else {
+                            self?.downloadStates[modelID] = .failed("Downloaded file not found at destination")
                         }
                     case .failure(let error):
                         self?.downloadStates[modelID] = .failed(error.localizedDescription)
@@ -111,15 +100,10 @@ final class ModelManagerService {
 
     private func ensureModelsDirectoryExists() {
         let fm = FileManager.default
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let vocoDir = appSupport.appendingPathComponent("Voco")
-        // Create Voco/ and Voco/Models/ — ensure all intermediates
-        try? fm.createDirectory(at: vocoDir, withIntermediateDirectories: true)
-        try? fm.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
-        // Verify: if still missing, try with explicit intermediate creation
-        if !fm.fileExists(atPath: modelsDirectory.path) {
-            print("[ModelManager] WARN: Models directory missing after creation, retrying...")
-            try? fm.createDirectory(atPath: appSupport.appendingPathComponent("Voco/Models").path, withIntermediateDirectories: true)
+        do {
+            try fm.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+        } catch {
+            print("Failed to create models directory: \(error)")
         }
     }
 
@@ -141,7 +125,8 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
 
     private struct DownloadHandler {
         let destination: URL
-        var location: URL?
+        var copiedLocation: URL?
+        var copyError: Error?
         var isCancelled = false
         let onProgress: (Double) -> Void
         let onComplete: (Result<URL, Error>) -> Void
@@ -163,8 +148,27 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
     // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        // Store the location — the completion callback fires via didCompleteWithError
-        handlers[downloadTask.taskIdentifier]?.location = location
+        guard let handler = handlers[downloadTask.taskIdentifier] else { return }
+        let fm = FileManager.default
+        let destination = handler.destination
+
+        // Ensure parent directory exists
+        let parentDir = destination.deletingLastPathComponent()
+        try? fm.createDirectory(at: parentDir, withIntermediateDirectories: true)
+
+        // Remove existing file if present (re-download scenario)
+        if fm.fileExists(atPath: destination.path) {
+            try? fm.removeItem(at: destination)
+        }
+
+        do {
+            // Copy the temp file to final destination BEFORE returning.
+            // The temp file is deleted by the system after this method returns.
+            try fm.copyItem(at: location, to: destination)
+            handlers[downloadTask.taskIdentifier]?.copiedLocation = destination
+        } catch {
+            handlers[downloadTask.taskIdentifier]?.copyError = error
+        }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
@@ -178,8 +182,10 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
         if handler.isCancelled { return }
         if let error {
             handler.onComplete(.failure(error))
-        } else if let location = handler.location {
-            handler.onComplete(.success(location))
+        } else if let copyError = handler.copyError {
+            handler.onComplete(.failure(copyError))
+        } else if let copiedLocation = handler.copiedLocation {
+            handler.onComplete(.success(copiedLocation))
         }
     }
 }
