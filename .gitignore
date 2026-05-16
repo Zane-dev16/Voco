@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Xcode — build artifacts
+build/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcscheme/xcschememanagement.plist
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# IDE
+.idea/
+.vscode/
+
+# Local environment / secrets
+.env
+.env.local
+*.pem
+*.p12
+
+# Model downloads (large binaries)
+*.gguf
+Models/Downloaded/
+
+# Logs
+*.log
