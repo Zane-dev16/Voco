@@ -91,7 +91,7 @@ final class TranslationViewModel {
                     return  // defer will reset isModelLoading
                 }
 
-                try await llamaService.loadModel(at: modelURL, modelID: model.id)
+                try await llamaService.loadModel(model, at: modelURL)
             }
 
             // Stream translation

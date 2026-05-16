@@ -61,10 +61,32 @@ struct ModelRow: View {
             HStack {
                 Text("Languages:").font(.caption2).foregroundStyle(.tertiary)
                 Text(model.supportedLanguages.map(\.flag).joined(separator: " ")).font(.caption2)
+                Spacer()
+                capabilityBadge
             }
             actionArea
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var capabilityBadge: some View {
+        switch model.capability {
+        case .simulatorAndDevice:
+            HStack(spacing: 2) {
+                Image(systemName: "iphone")
+                Text("Simulator OK")
+            }
+            .font(.caption2)
+            .foregroundStyle(.green)
+        case .deviceRecommended:
+            HStack(spacing: 2) {
+                Image(systemName: "memorychip")
+                Text("Device Preferred")
+            }
+            .font(.caption2)
+            .foregroundStyle(.orange)
+        }
     }
 
     @ViewBuilder
