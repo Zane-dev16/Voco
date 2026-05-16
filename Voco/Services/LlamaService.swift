@@ -2,7 +2,8 @@
 //  LlamaService.swift
 //  Voco
 //
-//  Created by Irell Zane on 14/05/2026.
+//  GGUF model loading and inference via SwiftLlama.
+//  Per-model configuration is read from TranslationModel.config.
 //
 
 import Foundation
@@ -16,76 +17,63 @@ import SwiftLlama
 @MainActor
 final class LlamaService {
     private var inferenceService: SwiftLlama.LlamaService?
-    private var currentModelID: String?
+    private var currentModel: TranslationModel?
 
     /// Whether a model is currently loaded and ready for inference.
     var isModelLoaded: Bool {
-        currentModelID != nil
+        currentModel != nil
     }
 
     /// The ID of the currently loaded model, if any.
     var loadedModelID: String? {
-        currentModelID
+        currentModel?.id
     }
-
-    /// Configuration for model inference.
-    private let config = LlamaConfig(
-        batchSize: 2048,
-        maxTokenCount: 2048,
-        useGPU: true
-    )
-
-    private let samplingConfig = LlamaSamplingConfig(
-        temperature: 0.3,
-        seed: 1234,
-        topP: 0.9,
-        topK: 40
-    )
 
     init() {}
 
     // MARK: - Model Lifecycle
 
-    /// Loads a GGUF model from a local file URL.
-    func loadModel(at url: URL, modelID: String) async throws {
-        if currentModelID == modelID { return }
+    /// Loads a GGUF model from a local file URL using the model's own configuration.
+    func loadModel(_ model: TranslationModel, at url: URL) async throws {
+        if currentModel?.id == model.id { return }
         unloadModel()
-        inferenceService = SwiftLlama.LlamaService(modelUrl: url, config: config)
-        currentModelID = modelID
+
+        let cfg = model.config
+        let llamaConfig = LlamaConfig(
+            batchSize: UInt32(cfg.batchSize),
+            maxTokenCount: UInt32(cfg.maxTokenCount),
+            useGPU: cfg.useGPU
+        )
+
+        inferenceService = SwiftLlama.LlamaService(modelUrl: url, config: llamaConfig)
+        currentModel = model
     }
 
     /// Releases the currently loaded model to free memory.
     func unloadModel() {
         inferenceService = nil
-        currentModelID = nil
+        currentModel = nil
     }
 
     // MARK: - Translation
 
-    /// Builds the translation prompt for the model.
-    private func buildPrompt(
-        _ text: String,
-        from sourceLanguage: String,
-        to targetLanguage: String
-    ) -> String {
-        "Translate the following text from \(sourceLanguage) to \(targetLanguage). Output ONLY the translation:\n\n\(text)"
-    }
-
-    /// Translates text using the loaded model.
+    /// Translates text using the loaded model with per-model prompt formatting.
     func translate(
         _ text: String,
         from sourceLanguage: String,
         to targetLanguage: String
     ) async throws -> String {
-        guard let service = inferenceService else {
+        guard let service = inferenceService, let model = currentModel else {
             throw LlamaError.noModelLoaded
         }
-        let prompt = buildPrompt(text, from: sourceLanguage, to: targetLanguage)
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a professional translator. Translate the user's text accurately and naturally. Output ONLY the translated text with no explanations, notes, or additional content."),
-            LlamaChatMessage(role: .user, content: prompt)
-        ]
-        let response = try await service.respond(to: messages, samplingConfig: samplingConfig)
+        let messages = buildMessages(
+            text: text,
+            source: sourceLanguage,
+            target: targetLanguage,
+            config: model.config
+        )
+        let sampling = samplingConfig(from: model.config)
+        let response = try await service.respond(to: messages, samplingConfig: sampling)
         return Self.stripThinkingTags(from: response)
     }
 
@@ -95,20 +83,23 @@ final class LlamaService {
         from sourceLanguage: String,
         to targetLanguage: String
     ) -> AsyncThrowingStream<String, any Error> {
-        guard let service = inferenceService else {
+        guard let service = inferenceService, let model = currentModel else {
             return AsyncThrowingStream { continuation in
                 continuation.finish(throwing: LlamaError.noModelLoaded)
             }
         }
-        let prompt = buildPrompt(text, from: sourceLanguage, to: targetLanguage)
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a professional translator. Translate the user's text accurately and naturally. Output ONLY the translated text with no explanations, notes, or additional content."),
-            LlamaChatMessage(role: .user, content: prompt)
-        ]
+        let messages = buildMessages(
+            text: text,
+            source: sourceLanguage,
+            target: targetLanguage,
+            config: model.config
+        )
+        let sampling = samplingConfig(from: model.config)
+
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let stream = try await service.streamCompletion(of: messages, samplingConfig: samplingConfig)
+                    let stream = try await service.streamCompletion(of: messages, samplingConfig: sampling)
                     var buffer = ""
                     var inThinkBlock = false
                     for try await token in stream {
@@ -122,7 +113,6 @@ final class LlamaService {
                                 buffer = ""
                                 inThinkBlock = true
                             } else if buffer.count > 20 {
-                                // Yield accumulated text outside think blocks
                                 continuation.yield(buffer)
                                 buffer = ""
                             }
@@ -130,17 +120,13 @@ final class LlamaService {
                             if let range = buffer.range(of: "</think>") {
                                 buffer = String(buffer[range.upperBound...])
                                 inThinkBlock = false
-                                // Process any remaining text in buffer
-                                if !buffer.isEmpty {
-                                    if buffer.range(of: "<think>") == nil {
-                                        continuation.yield(buffer)
-                                        buffer = ""
-                                    }
+                                if !buffer.isEmpty && buffer.range(of: "<think>") == nil {
+                                    continuation.yield(buffer)
+                                    buffer = ""
                                 }
                             }
                         }
                     }
-                    // Yield any remaining text
                     if !buffer.isEmpty && !inThinkBlock {
                         continuation.yield(buffer)
                     }
@@ -152,12 +138,39 @@ final class LlamaService {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Private
+
+    private func buildMessages(
+        text: String,
+        source: String,
+        target: String,
+        config: ModelConfiguration
+    ) -> [LlamaChatMessage] {
+        let userPrompt = config.userPromptTemplate
+            .replacingOccurrences(of: "{source}", with: source)
+            .replacingOccurrences(of: "{target}", with: target)
+            .replacingOccurrences(of: "{text}", with: text)
+
+        return [
+            LlamaChatMessage(role: .system, content: config.systemPrompt),
+            LlamaChatMessage(role: .user, content: userPrompt)
+        ]
+    }
+
+    private func samplingConfig(from config: ModelConfiguration) -> LlamaSamplingConfig {
+        LlamaSamplingConfig(
+            temperature: config.temperature,
+            seed: config.seed,
+            topP: config.topP,
+            topK: config.topK
+        )
+    }
 
     /// Strips `<think>...</think>` reasoning blocks from model output.
     static func stripThinkingTags(from text: String) -> String {
         var result = text
-        while let start = result.range(of: "<think>"), let end = result.range(of: "</think>", range: start.upperBound..<result.endIndex) {
+        while let start = result.range(of: "<think>"),
+              let end = result.range(of: "</think>", range: start.upperBound..<result.endIndex) {
             result.removeSubrange(start.lowerBound..<end.upperBound)
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
