@@ -7,25 +7,16 @@
 
 import Foundation
 import Observation
+import SwiftLlama
 
-#if canImport(LocalLLMClient) && !targetEnvironment(simulator)
-import LocalLLMClient
-import LocalLLMClientLlama
-#endif
-
-/// Manages GGUF model loading and text generation via llama.cpp.
+/// Manages GGUF model loading and text generation via llama.cpp using SwiftLlama.
 ///
-/// On device: wraps `LocalLLMClient` for real inference.
-/// On simulator: provides stub for UI testing.
+/// Works on both device and simulator by using prebuilt llama.cpp xcframework binaries.
 @Observable
 @MainActor
 final class LlamaService {
-    #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
-    private var session: LLMSession?
+    private var inferenceService: SwiftLlama.LlamaService?
     private var currentModelID: String?
-    #else
-    private var currentModelID: String?
-    #endif
 
     /// Whether a model is currently loaded and ready for inference.
     var isModelLoaded: Bool {
@@ -37,52 +28,35 @@ final class LlamaService {
         currentModelID
     }
 
-    #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
-    /// Parameters for model inference.
-    private let parameters: LlamaClient.Parameter
+    /// Configuration for model inference.
+    private let config = LlamaConfig(
+        batchSize: 2048,
+        maxTokenCount: 2048,
+        useGPU: true
+    )
 
-    init(parameters: LlamaClient.Parameter = .init(
-        context: 2048,
+    private let samplingConfig = LlamaSamplingConfig(
         temperature: 0.3,
-        topK: 40,
-        topP: 0.9
-    )) {
-        self.parameters = parameters
-    }
-    #else
-    /// On simulator, parameters are ignored (stub only).
-    init(parameters: Void = ()) { _ = parameters }
-    #endif
+        seed: 1234,
+        topP: 0.9,
+        topK: 40
+    )
+
+    init() {}
 
     // MARK: - Model Lifecycle
 
     /// Loads a GGUF model from a local file URL.
     func loadModel(at url: URL, modelID: String) async throws {
         if currentModelID == modelID { return }
-
         unloadModel()
-
-        #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
-        let localModel = LLMSession.LocalModel.llama(
-            url: url,
-            parameter: parameters
-        )
-        let newSession = LLMSession(model: localModel)
-        newSession.messages = [
-            .system("You are a professional translator. Translate the user's text accurately and naturally. Output ONLY the translated text with no explanations, notes, or additional content.")
-        ]
-        try await newSession.prewarm()
-        self.session = newSession
-        #endif
-
-        self.currentModelID = modelID
+        inferenceService = SwiftLlama.LlamaService(modelUrl: url, config: config)
+        currentModelID = modelID
     }
 
     /// Releases the currently loaded model to free memory.
     func unloadModel() {
-        #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
-        session = nil
-        #endif
+        inferenceService = nil
         currentModelID = nil
     }
 
@@ -103,25 +77,16 @@ final class LlamaService {
         from sourceLanguage: String,
         to targetLanguage: String
     ) async throws -> String {
-        guard currentModelID != nil else {
+        guard let service = inferenceService else {
             throw LlamaError.noModelLoaded
         }
-
-        #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
-        guard let session else {
-            throw LlamaError.noModelLoaded
-        }
-        // Reset to system prompt only — each translation is stateless
-        session.messages = [
-            .system("You are a professional translator. Translate the user's text accurately and naturally. Output ONLY the translated text with no explanations, notes, or additional content.")
-        ]
         let prompt = buildPrompt(text, from: sourceLanguage, to: targetLanguage)
-        let response = try await session.respond(to: prompt)
-        return response.trimmingCharacters(in: .whitespacesAndNewlines)
-        #else
-        // Simulator stub — return placeholder
-        return "[Simulator stub: \(sourceLanguage) → \(targetLanguage)] \(text)"
-        #endif
+        let messages = [
+            LlamaChatMessage(role: .system, content: "You are a professional translator. Translate the user's text accurately and naturally. Output ONLY the translated text with no explanations, notes, or additional content."),
+            LlamaChatMessage(role: .user, content: prompt)
+        ]
+        let response = try await service.respond(to: messages, samplingConfig: samplingConfig)
+        return Self.stripThinkingTags(from: response)
     }
 
     /// Translates text with streaming token generation.
@@ -130,33 +95,72 @@ final class LlamaService {
         from sourceLanguage: String,
         to targetLanguage: String
     ) -> AsyncThrowingStream<String, any Error> {
-        guard currentModelID != nil else {
-            return AsyncThrowingStream { continuation in
-                continuation.finish(throwing: LlamaError.noModelLoaded)
-            }
-        }
-
-        #if canImport(LocalLLMClient) && !targetEnvironment(simulator)
-        guard let session else {
+        guard let service = inferenceService else {
             return AsyncThrowingStream { continuation in
                 continuation.finish(throwing: LlamaError.noModelLoaded)
             }
         }
         let prompt = buildPrompt(text, from: sourceLanguage, to: targetLanguage)
-        return session.streamResponse(to: prompt)
-        #else
-        // Simulator stub — yield placeholder tokens
+        let messages = [
+            LlamaChatMessage(role: .system, content: "You are a professional translator. Translate the user's text accurately and naturally. Output ONLY the translated text with no explanations, notes, or additional content."),
+            LlamaChatMessage(role: .user, content: prompt)
+        ]
         return AsyncThrowingStream { continuation in
             Task {
-                let stub = "[Simulator: \(sourceLanguage) → \(targetLanguage)] \(text)"
-                for char in stub {
-                    continuation.yield(String(char))
-                    try await Task.sleep(for: .milliseconds(20))
+                do {
+                    let stream = try await service.streamCompletion(of: messages, samplingConfig: samplingConfig)
+                    var buffer = ""
+                    var inThinkBlock = false
+                    for try await token in stream {
+                        buffer += token
+                        if !inThinkBlock {
+                            if let range = buffer.range(of: "<think>") {
+                                let before = String(buffer[..<range.lowerBound])
+                                if !before.isEmpty {
+                                    continuation.yield(before)
+                                }
+                                buffer = ""
+                                inThinkBlock = true
+                            } else if buffer.count > 20 {
+                                // Yield accumulated text outside think blocks
+                                continuation.yield(buffer)
+                                buffer = ""
+                            }
+                        } else {
+                            if let range = buffer.range(of: "</think>") {
+                                buffer = String(buffer[range.upperBound...])
+                                inThinkBlock = false
+                                // Process any remaining text in buffer
+                                if !buffer.isEmpty {
+                                    if buffer.range(of: "<think>") == nil {
+                                        continuation.yield(buffer)
+                                        buffer = ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Yield any remaining text
+                    if !buffer.isEmpty && !inThinkBlock {
+                        continuation.yield(buffer)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
                 }
-                continuation.finish()
             }
         }
-        #endif
+    }
+
+    // MARK: - Helpers
+
+    /// Strips `<think>...</think>` reasoning blocks from model output.
+    static func stripThinkingTags(from text: String) -> String {
+        var result = text
+        while let start = result.range(of: "<think>"), let end = result.range(of: "</think>", range: start.upperBound..<result.endIndex) {
+            result.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
