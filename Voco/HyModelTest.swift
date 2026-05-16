@@ -96,6 +96,11 @@ func runHyModelTest() async {
         }
     } catch {
         NSLog("[HY-TEST-\(testID)] FAIL: Translation error: \(error)")
+        let nsError = error as NSError
+        NSLog("[HY-TEST-\(testID)] Error domain: \(nsError.domain), code: \(nsError.code)")
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            NSLog("[HY-TEST-\(testID)] Underlying error: \(underlying)")
+        }
         writeResult("FAIL: Translation error: \(error)")
     }
 

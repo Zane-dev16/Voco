@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pgorzelany/swift-llama-cpp.git",
       "state" : {
-        "revision" : "5496bc7c9820f04bba7268dc8a271235deae436d",
-        "version" : "1.2.0"
+        "branch" : "main",
+        "revision" : "605b79cc503dd79bf3aa259842596d42bcdedbe8"
       }
     }
   ],

@@ -350,8 +350,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pgorzelany/swift-llama-cpp.git";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.0;
+				kind = branch;
+				branch = main;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
