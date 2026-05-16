@@ -59,6 +59,7 @@ TranslationModel(
 | Qwen3 0.6B | Alibaba | ~397 MB | Q4_K_M | `.compact` | Simulator + Device |
 | Hunyuan 0.5B | Tencent | ~308 MB | Q3_K_M | `.compact` | Simulator + Device |
 | Gemma 3 1B | Google | ~690 MB | Q2_K | `.standard` | Device recommended |
+| Hy-MT1.5 1.8B | Tencent | ~440 MB | 1.25bit | `.compact` | Simulator + Device |
 
 ## Notes
 

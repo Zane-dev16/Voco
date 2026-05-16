@@ -96,6 +96,22 @@ extension TranslationModel {
             quantization: "Q2_K",
             config: .standard,
             capability: .deviceRecommended
+        ),
+        // ------------------------------------------------------------------
+        // 4. Tencent Hy-MT1.5 1.8B 1.25bit — dedicated translation model
+        // ------------------------------------------------------------------
+        TranslationModel(
+            id: "hy-mt1.5-1.8b-1.25bit",
+            displayName: "Tencent Hy-MT1.5 1.8B",
+            description: "Dedicated translation model from Tencent at aggressive 1.25-bit quantization. Good balance of size and quality for multilingual translation.",
+            provider: "Tencent",
+            sourceURL: URL(string: "https://huggingface.co/tencent/Hy-MT1.5-1.8B-1.25bit-GGUF/resolve/main/Hy-MT1.5-1.8B-1.25bit.gguf")!,
+            fileSizeBytes: 461_861_216,
+            supportedLanguages: Language.allCases,
+            hfRepo: "tencent/Hy-MT1.5-1.8B-1.25bit-GGUF",
+            quantization: "1.25bit",
+            config: .compact,
+            capability: .simulatorAndDevice
         )
     ]
 }
