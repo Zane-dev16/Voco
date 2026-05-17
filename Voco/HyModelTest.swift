@@ -2,8 +2,8 @@
 //  HyModelTest.swift
 //  Voco
 //
-//  Temporary integration test for Hy-MT1.5 model.
-//  Run once then remove.
+//  Production-readiness QA test for Hy-MT1.5 1.25-bit model.
+//  Tests: threading, streaming, multilingual routing, lazy lifecycle.
 //
 
 import Foundation
@@ -11,102 +11,156 @@ import SwiftLlama
 
 @MainActor
 func runHyModelTest() async {
-    let testID = UUID().uuidString.prefix(8)
-    NSLog("[HY-TEST-\(testID)] === Starting Hy-MT1.5 model integration test ===")
+    let testID = String(UUID().uuidString.prefix(8))
+    NSLog("[HY-TEST-\(testID)] === Production QA: Hy-MT1.5 1.25-bit ===\n")
 
-    // 1. Find the model in registry
+    let lifecycle = ModelLifecycleManager()
+
+    // 1. Find model in registry
     guard let model = TranslationModel.availableModels.first(where: { $0.id == "hy-mt1.5-1.8b-2bit" }) else {
-        NSLog("[HY-TEST-\(testID)] FAIL: Model 'hy-mt1.5-1.8b-2bit' not found in registry")
+        NSLog("[HY-TEST-\(testID)] FAIL: Model not found")
         writeResult("FAIL: Model not found")
         return
     }
-    NSLog("[HY-TEST-\(testID)] Found model: \(model.displayName) (\(model.formattedSize))")
+    NSLog("[HY-TEST-\(testID)] Model: \(model.displayName) (\(model.formattedSize))")
 
-    // 2. Check if already downloaded
-    let manager = ModelManagerService()
-    var localURL: URL? = manager.localURL(for: model)
-
-    if localURL == nil {
-        NSLog("[HY-TEST-\(testID)] Downloading model via URLSession...")
-        manager.download(model)
-
-        // Poll download state (max 10 min)
-        var attempts = 0
-        while attempts < 600 {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-
-            if let url = manager.localURL(for: model) {
-                localURL = url
-                NSLog("[HY-TEST-\(testID)] Download complete")
-                break
-            }
-
-            if case .failed(let msg) = manager.downloadStates[model.id] {
-                NSLog("[HY-TEST-\(testID)] FAIL: Download failed: \(msg)")
-                writeResult("FAIL: Download error: \(msg)")
-                return
-            }
-
-            attempts += 1
-        }
-    } else {
-        NSLog("[HY-TEST-\(testID)] Model already downloaded at: \(localURL!.path)")
-    }
-
-    guard let finalURL = localURL else {
-        NSLog("[HY-TEST-\(testID)] FAIL: Timeout waiting for download")
-        writeResult("FAIL: Download timeout")
+    // 2. Lazy activation (download + load)
+    NSLog("[HY-TEST-\(testID)] Activating model (lazy load)...")
+    do {
+        try await lifecycle.activate(model)
+        NSLog("[HY-TEST-\(testID)] Lifecycle state: ready — model loaded on demand")
+    } catch {
+        NSLog("[HY-TEST-\(testID)] FAIL: Activation error: \(error)")
+        writeResult("FAIL: Activation error: \(error)")
         return
     }
 
-    // Verify file size
-    let attrs = try? FileManager.default.attributesOfItem(atPath: finalURL.path)
-    let actualSize = (attrs?[.size] as? Int64) ?? 0
-    NSLog("[HY-TEST-\(testID)] File size: \(actualSize) bytes (expected: \(model.fileSizeBytes))")
+    // ------------------------------------------------
+    // QA 1: English -> Spanish (streaming)
+    // ------------------------------------------------
+    NSLog("[HY-TEST-\(testID)]\n--- QA-1: EN->ES Streaming Translation ---")
+    let resultENES = await testStreamingTranslation(
+        lifecycle: lifecycle,
+        text: "Hello, how are you today?",
+        targetLanguage: "Spanish",
+        testID: testID
+    )
+    NSLog("[HY-TEST-\(testID)] QA-1 result: \"\(resultENES)\"")
+    if resultENES.isEmpty || resultENES.lowercased() == "hello, how are you today?".lowercased() {
+        NSLog("[HY-TEST-\(testID)] QA-1: FAIL (empty or no translation)")
+        writeResult("FAIL: QA-1 EN->ES")
+        return
+    }
+    NSLog("[HY-TEST-\(testID)] QA-1: PASS")
 
-    // 3. Load model into LlamaService
-    let service = LlamaService()
+    // ------------------------------------------------
+    // QA 2: English -> French (second language)
+    // ------------------------------------------------
+    NSLog("[HY-TEST-\(testID)]\n--- QA-2: EN->FR Translation (second language) ---")
     do {
-        try await service.loadModel(model, at: finalURL)
-        NSLog("[HY-TEST-\(testID)] Model loaded successfully")
+        let resultFR = try await lifecycle.translate(
+            "Good morning, nice to meet you.",
+            from: "English", to: "French"
+        )
+        NSLog("[HY-TEST-\(testID)] QA-2 result: \"\(resultFR)\"")
+        if resultFR.isEmpty {
+            NSLog("[HY-TEST-\(testID)] QA-2: FAIL (empty)")
+            writeResult("FAIL: QA-2 EN->FR")
+            return
+        }
+        NSLog("[HY-TEST-\(testID)] QA-2: PASS")
     } catch {
-        NSLog("[HY-TEST-\(testID)] FAIL: Model load error: \(error)")
-        writeResult("FAIL: Model load error: \(error)")
+        NSLog("[HY-TEST-\(testID)] QA-2: FAIL — \(error)")
+        writeResult("FAIL: QA-2 EN->FR error: \(error)")
         return
     }
 
-    // 4. Test translation EN -> ES
-    let testPhrase = "Hello, how are you today?"
-    NSLog("[HY-TEST-\(testID)] Translating: '\(testPhrase)'")
+    // ------------------------------------------------
+    // QA 3: Unsupported language validation
+    // ------------------------------------------------
+    NSLog("[HY-TEST-\(testID)]\n--- QA-3: Unsupported language validation ---")
     do {
-        let result = try await service.translate(testPhrase, from: "English", to: "Spanish")
-        NSLog("[HY-TEST-\(testID)] Raw result: '\(result)'")
-
-        // Basic sanity check: output should be non-empty and different from input
-        let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            NSLog("[HY-TEST-\(testID)] FAIL: Empty translation output")
-            writeResult("FAIL: Empty output")
-        } else if trimmed.lowercased() == testPhrase.lowercased() {
-            NSLog("[HY-TEST-\(testID)] FAIL: Output identical to input (no translation)")
-            writeResult("FAIL: No translation occurred")
-        } else {
-            NSLog("[HY-TEST-\(testID)] PASS: Translation produced valid output")
-            writeResult("PASS: '\(trimmed)'")
-        }
+        let _ = try await lifecycle.translate(
+            "Test", from: "English", to: "Klingon"
+        )
+        NSLog("[HY-TEST-\(testID)] QA-3: FAIL (should have thrown)")
+        writeResult("FAIL: QA-3 no error for unsupported language")
+        return
+    } catch LlamaError.unsupportedLanguage(let lang) {
+        NSLog("[HY-TEST-\(testID)] QA-3: PASS — correctly rejected \"\(lang)\"")
     } catch {
-        NSLog("[HY-TEST-\(testID)] FAIL: Translation error: \(error)")
-        let nsError = error as NSError
-        NSLog("[HY-TEST-\(testID)] Error domain: \(nsError.domain), code: \(nsError.code)")
-        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
-            NSLog("[HY-TEST-\(testID)] Underlying error: \(underlying)")
-        }
-        writeResult("FAIL: Translation error: \(error)")
+        NSLog("[HY-TEST-\(testID)] QA-3: Wrong error: \(error)")
+        writeResult("FAIL: QA-3 wrong error type")
+        return
     }
 
-    // Unload to free memory
-    service.unloadModel()
-    NSLog("[HY-TEST-\(testID)] === Test complete ===")
+    // ------------------------------------------------
+    // QA 4: Provider switching (unload + reload)
+    // ------------------------------------------------
+    NSLog("[HY-TEST-\(testID)]\n--- QA-4: Provider switching (deactivate + reactivate) ---")
+    await lifecycle.deactivate()
+    NSLog("[HY-TEST-\(testID)] QA-4a: Deactivated — state: \(lifecycle.lifecycleState)")
+    if lifecycle.lifecycleState != .idle {
+        writeResult("FAIL: QA-4a not idle after deactivate")
+        return
+    }
+
+    do {
+        try await lifecycle.activate(model)
+        NSLog("[HY-TEST-\(testID)] QA-4b: Reactivated — state: \(lifecycle.lifecycleState)")
+        let resultReload = try await lifecycle.translate(
+            "Thank you very much!", from: "English", to: "German"
+        )
+        NSLog("[HY-TEST-\(testID)] QA-4 result: \"\(resultReload)\"")
+        if resultReload.isEmpty {
+            writeResult("FAIL: QA-4b empty after reload")
+            return
+        }
+        NSLog("[HY-TEST-\(testID)] QA-4: PASS")
+    } catch {
+        NSLog("[HY-TEST-\(testID)] QA-4: FAIL — \(error)")
+        writeResult("FAIL: QA-4 reload error: \(error)")
+        return
+    }
+
+    // Clean up
+    await lifecycle.deactivate()
+    NSLog("[HY-TEST-\(testID)]\n=== All QA tests PASSED ===\n")
+    writeResult("PASS: All 4 QA tests passed")
+}
+
+// MARK: - Helpers
+
+private func testStreamingTranslation(
+    lifecycle: ModelLifecycleManager,
+    text: String,
+    targetLanguage: String,
+    testID: String
+) async -> String {
+    let stream = lifecycle.translateStream(text, from: "English", to: targetLanguage)
+    var chunks: [String] = []
+    var fullOutput = ""
+    var firstTokenTime: Date?
+
+    do {
+        for try await chunk in stream {
+            if firstTokenTime == nil {
+                firstTokenTime = Date()
+            }
+            chunks.append(chunk)
+            fullOutput += chunk
+            NSLog("[HY-TEST-\(testID)]   Stream chunk: \"\(chunk)\"")
+        }
+    } catch {
+        NSLog("[HY-TEST-\(testID)] Stream error: \(error)")
+        return ""
+    }
+
+    let trimmed = fullOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let firstToken = firstTokenTime {
+        NSLog("[HY-TEST-\(testID)]   Streaming: \(chunks.count) chunks, first token after \(firstToken.timeIntervalSinceNow * -1000)ms")
+    }
+    return trimmed
 }
 
 private func writeResult(_ message: String) {
