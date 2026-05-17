@@ -103,14 +103,14 @@ extension TranslationModel {
         TranslationModel(
             id: "hy-mt1.5-1.8b-2bit",
             displayName: "Tencent Hy-MT1.5 1.8B",
-            description: "Dedicated translation model from Tencent at 2-bit quantization. Standard GGUF format fully supported by llama.cpp. Excellent size-to-quality ratio for multilingual translation.",
+            description: "Dedicated translation model from Tencent at 1.25-bit Sherry quantization. Uses STQ1_0 kernel supported by Prism fork. Excellent size-to-quality ratio for multilingual translation.",
             provider: "Tencent",
-            sourceURL: URL(string: "https://huggingface.co/AngelSlim/Hy-MT1.5-1.8B-2bit-GGUF/resolve/main/Hy-MT1.5-1.8B-2bit.gguf")!,
-            fileSizeBytes: 600_534_880,
+            sourceURL: URL(string: "https://huggingface.co/AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF/resolve/main/Hy-MT1.5-1.8B-1.25bit.gguf")!,
+            fileSizeBytes: 461_861_216,
             supportedLanguages: Language.allCases,
-            hfRepo: "AngelSlim/Hy-MT1.5-1.8B-2bit-GGUF",
-            quantization: "2bit",
-            config: .compact,
+            hfRepo: "AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF",
+            quantization: "1.25bit (STQ1_0)",
+            config: .hunyuanMT,
             capability: .simulatorAndDevice
         )
     ]
