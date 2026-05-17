@@ -42,11 +42,15 @@ final class LlamaService {
         let llamaConfig = LlamaConfig(
             batchSize: UInt32(cfg.batchSize),
             maxTokenCount: UInt32(cfg.maxTokenCount),
-            useGPU: cfg.useGPU
+            useGPU: cfg.useGPU,
+            nThreads: UInt32(cfg.threadCount),
+            nThreadsBatch: UInt32(cfg.threadCountBatch)
         )
 
         inferenceService = SwiftLlama.LlamaService(modelUrl: url, config: llamaConfig)
         currentModel = model
+        print("[LlamaService] Loaded model '\(model.displayName)' — threads=\(cfg.threadCount)/\(cfg.threadCountBatch)")
+        NSLog("[LlamaService] Loaded model '\(model.displayName)' — threads=\(cfg.threadCount)/\(cfg.threadCountBatch)")
     }
 
     /// Releases the currently loaded model to free memory.
@@ -66,13 +70,35 @@ final class LlamaService {
         guard let service = inferenceService, let model = currentModel else {
             throw LlamaError.noModelLoaded
         }
+
+        // Validate target language
+        guard model.supportedLanguages.contains(where: { $0.hunyuanTargetName == targetLanguage || $0.displayName == targetLanguage }) else {
+            throw LlamaError.unsupportedLanguage(targetLanguage)
+        }
+
+        let sampling = samplingConfig(from: model.config)
+
+        // HY-MT1.5 models use raw SentencePiece prompt format, bypassing chat template
+        if model.config == .hunyuanMT {
+            let resolvedTarget = Language.allCases.first(where: { $0.displayName == targetLanguage || $0.hunyuanTargetName == targetLanguage })?.hunyuanTargetName ?? targetLanguage
+            let rawPrompt = model.config.userPromptTemplate
+                .replacingOccurrences(of: "{source}", with: sourceLanguage)
+                .replacingOccurrences(of: "{target}", with: resolvedTarget)
+                .replacingOccurrences(of: "{text}", with: text)
+            let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling)
+            var output = ""
+            for try await token in stream {
+                output += token
+            }
+            return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         let messages = buildMessages(
             text: text,
             source: sourceLanguage,
             target: targetLanguage,
             config: model.config
         )
-        let sampling = samplingConfig(from: model.config)
         let response = try await service.respond(to: messages, samplingConfig: sampling)
         return Self.stripThinkingTags(from: response)
     }
@@ -88,13 +114,49 @@ final class LlamaService {
                 continuation.finish(throwing: LlamaError.noModelLoaded)
             }
         }
+
+        let sampling = samplingConfig(from: model.config)
+
+        // HY-MT1.5: use raw SentencePiece prompt path with streaming
+        if model.config == .hunyuanMT {
+            // Resolve the target language to its model-facing name
+            let resolvedTarget = Language.allCases.first(where: { $0.displayName == targetLanguage || $0.hunyuanTargetName == targetLanguage })?.hunyuanTargetName ?? targetLanguage
+            let rawPrompt = model.config.userPromptTemplate
+                .replacingOccurrences(of: "{source}", with: sourceLanguage)
+                .replacingOccurrences(of: "{target}", with: resolvedTarget)
+                .replacingOccurrences(of: "{text}", with: text)
+
+            return AsyncThrowingStream { continuation in
+                Task {
+                    do {
+                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling)
+                        var buffer = ""
+                        for try await token in stream {
+                            buffer += token
+                            // Flush every few characters to avoid flicker
+                            if buffer.count >= 4 {
+                                continuation.yield(buffer)
+                                buffer = ""
+                            }
+                        }
+                        if !buffer.isEmpty {
+                            continuation.yield(buffer)
+                        }
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+        }
+
+        // Standard chat-template path
         let messages = buildMessages(
             text: text,
             source: sourceLanguage,
             target: targetLanguage,
             config: model.config
         )
-        let sampling = samplingConfig(from: model.config)
 
         return AsyncThrowingStream { continuation in
             Task {
@@ -181,11 +243,14 @@ final class LlamaService {
 
 enum LlamaError: LocalizedError {
     case noModelLoaded
+    case unsupportedLanguage(String)
 
     var errorDescription: String? {
         switch self {
         case .noModelLoaded:
             return "No model loaded. Download and select a model first."
+        case .unsupportedLanguage(let lang):
+            return "The language \"\(lang)\" is not supported by the current model."
         }
     }
 }
