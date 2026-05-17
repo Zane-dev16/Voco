@@ -2,7 +2,7 @@
 //  SettingsView.swift
 //  Voco
 //
-//  Provider selection and storage management.
+//  Model status and storage management.
 //
 
 import SwiftUI
@@ -11,8 +11,8 @@ struct SettingsView: View {
     let lifecycleManager: ModelLifecycleManager
     let downloadManager: ModelManagerService
 
-    @State private var useLocalEngine: Bool = false
     @State private var showDeleteConfirmation: Bool = false
+    @State private var deleteSuccess: Bool = false
 
     private var tencentModel: TranslationModel? {
         TranslationModel.availableModels.first { $0.id == "hy-mt1.5-1.8b-2bit" }
@@ -20,89 +20,20 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            // MARK: - Providers Section
+            // MARK: - Engine Status
             Section {
-                Toggle(isOn: $useLocalEngine) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "cpu.fill")
-                            .font(.title3)
-                            .foregroundStyle(.indigo)
-                            .frame(width: 32)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Local Tencent Engine")
-                                .font(.body)
-                            Text("Offline · Private · 440 MB")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .tint(.indigo)
-                .onChange(of: useLocalEngine) { _, enabled in
-                    handleProviderToggle(enabled: enabled)
-                }
+                engineStatusRow
             } header: {
-                Text("Translation Provider")
+                Text("Translation Engine")
             } footer: {
-                Text(useLocalEngine
-                     ? "Translations run entirely on-device using the STQ1_0 quantized model. No data leaves your iPhone."
-                     : "Cloud models are available for comparison and fallback.")
+                Text("Translations run entirely on-device using the STQ1_0 quantized model. No data leaves your iPhone.")
                     .font(.caption)
             }
 
-            // MARK: - Storage Section
+            // MARK: - Storage
             if let model = tencentModel, downloadManager.isModelDownloaded(model) {
                 Section {
-                    HStack(spacing: 12) {
-                        Image(systemName: "internaldrive.fill")
-                            .font(.title3)
-                            .foregroundStyle(.orange)
-                            .frame(width: 32)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(model.displayName)
-                                .font(.body)
-
-                            Text("\(model.formattedSize) · 1.25-bit STQ1_0")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            // Storage bar
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .fill(Color(.tertiarySystemFill))
-                                        .frame(height: 6)
-
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .fill(Color.orange.opacity(0.7))
-                                        .frame(width: storageBarWidth(in: geo.size.width), height: 6)
-                                }
-                            }
-                            .frame(height: 6)
-                            .padding(.top, 4)
-                        }
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            showDeleteConfirmation = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                    .confirmationDialog(
-                        "Delete Translation Engine?",
-                        isPresented: $showDeleteConfirmation,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Delete \(model.formattedSize)", role: .destructive) {
-                            deleteModel(model)
-                        }
-                        Button("Keep", role: .cancel) {}
-                    } message: {
-                        Text("This will remove the offline translation engine from your device. You can re-download it anytime.")
-                    }
+                    storageRow(model: model)
                 } header: {
                     Text("Storage")
                 } footer: {
@@ -112,7 +43,7 @@ struct SettingsView: View {
                     }
                     .font(.caption)
                 }
-            } else if let _ = tencentModel {
+            } else {
                 Section {
                     HStack(spacing: 12) {
                         Image(systemName: "icloud.and.arrow.down")
@@ -133,7 +64,7 @@ struct SettingsView: View {
                 }
             }
 
-            // MARK: - Info Section
+            // MARK: - Technical Info
             Section {
                 LabeledContent("Backend", value: "llama.cpp PR #22836 (stq-kernel)")
                 LabeledContent("Quantization", value: "STQ1_0 (1.25-bit Sherry)")
@@ -144,6 +75,114 @@ struct SettingsView: View {
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    // MARK: - Engine Status Row
+
+    @ViewBuilder
+    private var engineStatusRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "cpu.fill")
+                .font(.title3)
+                .foregroundStyle(isActive ? .green : .indigo)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tencent Hy-MT1.5 1.8B")
+                    .font(.body)
+
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if isActive {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else if deleteSuccess {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.green)
+            }
+        }
+    }
+
+    private var isActive: Bool {
+        if case .ready = lifecycleManager.lifecycleState { return true }
+        return false
+    }
+
+    private var statusText: String {
+        if isActive {
+            return "Active — Model loaded in memory"
+        } else if let model = tencentModel, downloadManager.isModelDownloaded(model) {
+            return "Ready — \(model.formattedSize) downloaded"
+        } else {
+            return "Not downloaded — Tap Translate tab to download"
+        }
+    }
+
+    // MARK: - Storage Row
+
+    private func storageRow(model: TranslationModel) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "internaldrive.fill")
+                    .font(.title3)
+                    .foregroundStyle(.orange)
+                    .frame(width: 32)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.displayName)
+                        .font(.body)
+
+                    Text("\(model.formattedSize) · 1.25-bit STQ1_0")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color(.tertiarySystemFill))
+                                .frame(height: 6)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.orange.opacity(0.7))
+                                .frame(width: storageBarWidth(in: geo.size.width), height: 6)
+                        }
+                    }
+                    .frame(height: 6)
+                    .padding(.top, 4)
+                }
+            }
+
+            // Delete button
+            Button(role: .destructive) {
+                showDeleteConfirmation = true
+            } label: {
+                HStack {
+                    Image(systemName: "trash")
+                    Text("Delete Model")
+                }
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderless)
+            .padding(.top, 12)
+        }
+        .confirmationDialog(
+            "Delete Translation Engine?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(model.formattedSize)", role: .destructive) {
+                performDelete(model)
+            }
+            Button("Keep", role: .cancel) {}
+        } message: {
+            Text("This will remove the offline translation engine from your device. You can re-download it anytime.")
+        }
     }
 
     // MARK: - Helpers
@@ -160,35 +199,24 @@ struct SettingsView: View {
         return max(ratio * totalWidth, 4)
     }
 
-    private func handleProviderToggle(enabled: Bool) {
-        guard let model = tencentModel else { return }
-
-        Task {
-            if enabled {
-                // Activate local engine
-                if !downloadManager.isModelDownloaded(model) {
-                    // Need to download first — handled by onboarding
-                    useLocalEngine = false
-                    return
-                }
-                try? await lifecycleManager.activate(model)
-            } else {
-                // Deactivate local engine
-                await lifecycleManager.deactivate()
-            }
+    private func performDelete(_ model: TranslationModel) {
+        // Unload if active
+        if lifecycleManager.activeModelID == model.id {
+            Task { await lifecycleManager.deactivate() }
         }
-    }
 
-    private func deleteModel(_ model: TranslationModel) {
-        Task {
-            // Unload if active
-            if lifecycleManager.activeModelID == model.id {
-                await lifecycleManager.deactivate()
+        // Delete file
+        do {
+            try downloadManager.deleteModel(model)
+            withAnimation {
+                deleteSuccess = true
             }
-
-            // Delete file
-            try? downloadManager.deleteModel(model)
-            useLocalEngine = false
+            // Reset after a moment
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                deleteSuccess = false
+            }
+        } catch {
+            print("[Settings] Delete error: \(error)")
         }
     }
 }

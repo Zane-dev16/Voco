@@ -14,10 +14,24 @@ struct OnboardingView: View {
 
     @Environment(\.openURL) private var openURL
 
-    @State private var downloadProgress: Double = 0
-    @State private var isDownloading = false
     @State private var isActivating = false
     @State private var showSuccess = false
+
+    /// Progress from the live download state (0.0–1.0).
+    private var downloadProgress: Double {
+        if case .downloading(let p) = downloadManager.downloadStates[model.id] {
+            return p
+        }
+        return 0
+    }
+
+    /// Whether a download is currently in flight.
+    private var isDownloading: Bool {
+        if case .downloading = downloadManager.downloadStates[model.id] {
+            return true
+        }
+        return false
+    }
 
     var body: some View {
         VStack(spacing: 24) {
@@ -47,17 +61,36 @@ struct OnboardingView: View {
             // Button
             Button { handleAction() } label: {
                 HStack(spacing: 12) {
-                    if showSuccess { Image(systemName: "checkmark.circle.fill") }
-                    else if isDownloading || isActivating { ProgressView().tint(.white) }
-                    else { Image(systemName: "arrow.down.circle.fill") }
+                    if showSuccess {
+                        Image(systemName: "checkmark.circle.fill")
+                    } else if isDownloading {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "arrow.down.circle.fill")
+                    }
                     Text(buttonLabel).fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 16)
                 .background(buttonColor).foregroundStyle(.white)
                 .clipShape(Capsule())
+                .shadow(color: buttonColor.opacity(0.3), radius: 8, y: 4)
             }
             .disabled(isDownloading || isActivating)
             .padding(.horizontal, 32)
+
+            // Progress bar (only visible during download)
+            if isDownloading {
+                VStack(spacing: 6) {
+                    ProgressView(value: downloadProgress)
+                        .tint(.indigo)
+                        .padding(.horizontal, 32)
+
+                    Text("\(formattedDownloadedBytes) of \(model.formattedSize)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                }
+            }
 
             // Legal
             HStack(alignment: .top, spacing: 4) {
@@ -79,6 +112,8 @@ struct OnboardingView: View {
         .background(Color(.systemGroupedBackground))
     }
 
+    // MARK: - Button label
+
     private var buttonLabel: String {
         if showSuccess { return "Engine Ready" }
         if isDownloading { return "Downloading... \(Int(downloadProgress * 100))%" }
@@ -93,6 +128,14 @@ struct OnboardingView: View {
         return .indigo
     }
 
+    /// Bytes downloaded so far based on progress × expected size.
+    private var formattedDownloadedBytes: String {
+        let bytes = Int64(Double(model.fileSizeBytes) * downloadProgress)
+        return ByteCountFormatter.string(fromByteCount: max(bytes, 0), countStyle: .file)
+    }
+
+    // MARK: - Action
+
     private func handleAction() {
         guard !isDownloading, !isActivating else { return }
         isActivating = true
@@ -100,23 +143,27 @@ struct OnboardingView: View {
         Task {
             do {
                 if !downloadManager.isModelDownloaded(model) {
-                    isDownloading = true
                     downloadManager.download(model)
+
+                    // Wait for download to finish (or fail)
                     var tries = 0
                     while !downloadManager.isModelDownloaded(model) && tries < 600 {
                         try? await Task.sleep(nanoseconds: 1_000_000_000)
                         if case .failed = downloadManager.downloadStates[model.id] {
-                            isDownloading = false; isActivating = false; return
+                            isActivating = false
+                            return
                         }
                         tries += 1
                     }
-                    isDownloading = false
                 }
+
                 try await lifecycleManager.activate(model)
-                withAnimation { showSuccess = true }
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                    showSuccess = true
+                }
                 try? await Task.sleep(nanoseconds: 800_000_000)
             } catch {
-                isDownloading = false; isActivating = false
+                isActivating = false
             }
         }
     }

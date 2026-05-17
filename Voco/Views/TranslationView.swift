@@ -17,6 +17,7 @@ struct TranslationView: View {
     @State private var selectedLanguage: Language = .spanish
     @State private var isTranslating: Bool = false
     @State private var showShimmer: Bool = false
+    @FocusState private var isInputFocused: Bool
 
     /// Haptic generator for streaming feedback.
     private let haptic = UIImpactFeedbackGenerator(style: .soft)
@@ -39,7 +40,15 @@ struct TranslationView: View {
             outputSection
         }
         .background(Color(.systemBackground))
+        .onTapGesture { isInputFocused = false }
         .onAppear { haptic.prepare() }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { isInputFocused = false }
+                    .fontWeight(.semibold)
+            }
+        }
     }
 
     // MARK: - Input
@@ -72,6 +81,7 @@ struct TranslationView: View {
 
             TextEditor(text: $inputText)
                 .font(.body)
+                .focused($isInputFocused)
                 .scrollContentBackground(.hidden)
                 .background(Color(.tertiarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 16))

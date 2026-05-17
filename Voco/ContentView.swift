@@ -3,6 +3,7 @@
 //  Voco
 //
 //  Root view with tab navigation. Wires backend services to UI.
+//  Auto-loads the local model when the Translate tab is opened.
 //
 
 import SwiftUI
@@ -12,7 +13,6 @@ struct ContentView: View {
     @State private var downloadManager = ModelManagerService()
     @State private var selectedTab = 0
 
-    /// The Tencent model from the registry.
     private var tencentModel: TranslationModel? {
         TranslationModel.availableModels.first { $0.id == "hy-mt1.5-1.8b-2bit" }
     }
@@ -34,10 +34,28 @@ struct ContentView: View {
                 .tag(1)
         }
         .tint(.indigo)
-        .onAppear {
-            // Pre-scan for downloaded model on launch
-            _ = downloadManager
+        .onChange(of: selectedTab) { _, newTab in
+            if newTab == 0 { autoActivateIfReady() }
         }
+        .onAppear {
+            autoActivateIfReady()
+        }
+    }
+
+    /// If the model is downloaded but not loaded, load it automatically.
+    private func autoActivateIfReady() {
+        guard let model = tencentModel else { return }
+        guard downloadManager.isModelDownloaded(model) else { return }
+        guard !isModelReady else { return }
+
+        Task {
+            try? await lifecycleManager.activate(model)
+        }
+    }
+
+    private var isModelReady: Bool {
+        if case .ready = lifecycleManager.lifecycleState { return true }
+        return false
     }
 }
 
