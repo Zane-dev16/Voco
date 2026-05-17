@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		51BF544A2FB91373003B927B /* SwiftLlama in Frameworks */ = {isa = PBXBuildFile; productRef = CC0312C255D20C80CCD4FF2F /* SwiftLlama */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		512D511A2FB5E00700E770FB /* Voco.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Voco.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -13,8 +17,6 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		512D511C2FB5E00700E770FB /* Voco */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = Voco;
 			sourceTree = "<group>";
 		};
@@ -25,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				51BF544A2FB91373003B927B /* SwiftLlama in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -98,7 +101,7 @@
 			mainGroup = 512D51112FB5E00700E770FB;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				0B3DFD57C4FCD599204176A2 /* XCRemoteSwiftPackageReference "swift-llama-cpp" */,
+				0B3DFD57C4FCD599204176A2 /* XCLocalSwiftPackageReference "Packages/swift-llama-cpp" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 512D511B2FB5E00700E770FB /* Products */;
@@ -345,21 +348,17 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		0B3DFD57C4FCD599204176A2 /* XCRemoteSwiftPackageReference "swift-llama-cpp" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/pgorzelany/swift-llama-cpp.git";
-			requirement = {
-				kind = branch;
-				branch = main;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		0B3DFD57C4FCD599204176A2 /* XCLocalSwiftPackageReference "Packages/swift-llama-cpp" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Packages/swift-llama-cpp";
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		CC0312C255D20C80CCD4FF2F /* SwiftLlama */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0B3DFD57C4FCD599204176A2 /* XCRemoteSwiftPackageReference "swift-llama-cpp" */;
+			package = 0B3DFD57C4FCD599204176A2 /* XCLocalSwiftPackageReference "Packages/swift-llama-cpp" */;
 			productName = SwiftLlama;
 		};
 /* End XCSwiftPackageProductDependency section */
