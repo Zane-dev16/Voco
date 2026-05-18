@@ -78,18 +78,27 @@ final class LlamaService {
 
         let sampling = samplingConfig(from: model.config)
 
-        // HY-MT1.5 models use raw SentencePiece prompt format, bypassing chat template
-        if model.config == .hunyuanMT {
-            let resolvedTarget = Language.allCases.first(where: { $0.displayName == targetLanguage || $0.hunyuanTargetName == targetLanguage })?.hunyuanTargetName ?? targetLanguage
+        // HY-MT1.5 and NLLB models use raw prompt format, bypassing chat template
+        if model.config == .hunyuanMT || model.config == .nllbTranslate {
+            let resolvedTarget: String
+            let resolvedSource: String
+            if model.config == .nllbTranslate {
+                // NLLB uses ISO language codes (en, es, fr...)
+                resolvedSource = Language.allCases.first(where: { $0.displayName == sourceLanguage })?.code ?? "en"
+                resolvedTarget = Language.allCases.first(where: { $0.displayName == targetLanguage || $0.hunyuanTargetName == targetLanguage })?.code ?? "es"
+            } else {
+                resolvedSource = sourceLanguage
+                resolvedTarget = Language.allCases.first(where: { $0.displayName == targetLanguage || $0.hunyuanTargetName == targetLanguage })?.hunyuanTargetName ?? targetLanguage
+            }
             let rawPrompt = model.config.userPromptTemplate
-                .replacingOccurrences(of: "{source}", with: sourceLanguage)
+                .replacingOccurrences(of: "{source}", with: resolvedSource)
+                .replacingOccurrences(of: "{source_code}", with: resolvedSource)
                 .replacingOccurrences(of: "{target}", with: resolvedTarget)
+                .replacingOccurrences(of: "{target_code}", with: resolvedTarget)
                 .replacingOccurrences(of: "{text}", with: text)
             let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling)
             var output = ""
-            for try await token in stream {
-                output += token
-            }
+            for try await token in stream { output += token }
             return output.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
@@ -208,13 +217,15 @@ final class LlamaService {
         target: String,
         config: ModelConfiguration
     ) -> [LlamaChatMessage] {
+        let systemPrompt = config.systemPrompt
+            .replacingOccurrences(of: "{target}", with: target)
         let userPrompt = config.userPromptTemplate
             .replacingOccurrences(of: "{source}", with: source)
             .replacingOccurrences(of: "{target}", with: target)
             .replacingOccurrences(of: "{text}", with: text)
 
         return [
-            LlamaChatMessage(role: .system, content: config.systemPrompt),
+            LlamaChatMessage(role: .system, content: systemPrompt),
             LlamaChatMessage(role: .user, content: userPrompt)
         ]
     }

@@ -14,7 +14,8 @@ struct TranslationView: View {
 
     @State private var inputText: String = ""
     @State private var outputText: String = ""
-    @State private var selectedLanguage: Language = .spanish
+    @State private var sourceLanguage: Language = .english
+    @State private var targetLanguage: Language = .spanish
     @State private var isTranslating: Bool = false
     @State private var showShimmer: Bool = false
     @FocusState private var isInputFocused: Bool
@@ -139,36 +140,59 @@ struct TranslationView: View {
     // MARK: - Language Picker
 
     private var languagePicker: some View {
-        HStack(spacing: 12) {
-            Label("English", systemImage: "textformat")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .padding(.vertical, 4)
-                .padding(.horizontal, 12)
-                .background(Color(.tertiarySystemBackground))
-                .clipShape(Capsule())
-
-            Image(systemName: "arrow.right")
-                .font(.caption.bold())
-                .foregroundStyle(.indigo)
-
+        HStack(spacing: 8) {
             Menu {
-                ForEach(Language.allCases.filter { $0 != .english }) { lang in
+                ForEach(Language.allCases) { lang in
                     Button {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            selectedLanguage = lang
+                            sourceLanguage = lang
                         }
                     } label: {
                         HStack {
                             Text("\(lang.flag) \(lang.displayName)")
-                            if lang == selectedLanguage {
+                            if lang == sourceLanguage {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
                 }
             } label: {
-                Label(selectedLanguage.displayName, systemImage: "globe")
+                Label(sourceLanguage.displayName, systemImage: "textformat")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 12)
+                    .background(Color(.tertiarySystemBackground))
+                    .clipShape(Capsule())
+            }
+
+            Button {
+                swapLanguages()
+            } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(.indigo)
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                ForEach(Language.allCases) { lang in
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            targetLanguage = lang
+                        }
+                    } label: {
+                        HStack {
+                            Text("\(lang.flag) \(lang.displayName)")
+                            if lang == targetLanguage {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label(targetLanguage.displayName, systemImage: "globe")
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                     .padding(.vertical, 4)
@@ -178,6 +202,14 @@ struct TranslationView: View {
             }
         }
         .padding(.vertical, 10)
+    }
+
+    private func swapLanguages() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            let temp = sourceLanguage
+            sourceLanguage = targetLanguage
+            targetLanguage = temp
+        }
     }
 
     // MARK: - Output
@@ -264,7 +296,7 @@ struct TranslationView: View {
         outputText = ""
         showShimmer = true
 
-        let targetLang = selectedLanguage.hunyuanTargetName
+        let targetLang = targetLanguage.hunyuanTargetName
 
         Task {
             var fullOutput = ""
@@ -272,7 +304,7 @@ struct TranslationView: View {
 
             let stream = lifecycleManager.translateStream(
                 text,
-                from: "English",
+                from: sourceLanguage.displayName,
                 to: targetLang
             )
 
