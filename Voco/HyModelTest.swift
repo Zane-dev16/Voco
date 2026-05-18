@@ -17,8 +17,8 @@ func runHyModelTest() async {
     let lifecycle = ModelLifecycleManager()
 
     // 1. Find model in registry
-    guard let model = TranslationModel.availableModels.first(where: { $0.id == "hy-mt1.5-1.8b-2bit" }) else {
-        NSLog("[HY-TEST-\(testID)] FAIL: Model not found")
+    guard let model = TranslationModel.availableModels.first(where: { $0.id == "hy-mt1.5-1.8b-stq" }) else {
+        NSLog("[HY-TEST-\(testID)] FAIL: Model 'hy-mt1.5-1.8b-stq' not found in registry")
         writeResult("FAIL: Model not found")
         return
     }

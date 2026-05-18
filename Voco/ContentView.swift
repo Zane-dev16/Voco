@@ -12,9 +12,7 @@ struct ContentView: View {
     @State private var lifecycleManager = ModelLifecycleManager()
     @State private var downloadManager = ModelManagerService()
     @State private var selectedTab = 0
-    @State private var selectedModelID: String = {
-        TranslationModel.availableModels.first?.id ?? ""
-    }()
+    @State private var selectedModelID: String = "hy-mt1.5-1.8b-stq"
 
     private var selectedModel: TranslationModel? {
         TranslationModel.availableModels.first { $0.id == selectedModelID }
