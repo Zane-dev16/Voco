@@ -18,7 +18,7 @@ func runHyModelTest() async {
 
     // 1. Find model in registry
     guard let model = TranslationModel.availableModels.first(where: { $0.id == "hy-mt1.5-1.8b-stq" }) else {
-        NSLog("[HY-TEST-\(testID)] FAIL: Model 'hy-mt1.5-1.8b-stq' not found in registry")
+        NSLog("[HY-TEST-\(testID)] FAIL: Model not found")
         writeResult("FAIL: Model not found")
         return
     }
