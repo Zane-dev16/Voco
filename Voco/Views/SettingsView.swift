@@ -2,7 +2,7 @@
 //  SettingsView.swift
 //  Voco
 //
-//  Model status and storage management.
+//  Clean settings with model management and storage info.
 //
 
 import SwiftUI
@@ -10,102 +10,279 @@ import SwiftUI
 struct SettingsView: View {
     let lifecycleManager: ModelLifecycleManager
     let downloadManager: ModelManagerService
+    @Binding var selectedModelID: String
 
-    @State private var showDeleteConfirmation: Bool = false
-    @State private var deleteSuccess: Bool = false
+    @State private var showDeleteConfirmation = false
+    @State private var modelToDelete: TranslationModel?
+    @State private var showModelSheet = false
 
-    private var tencentModel: TranslationModel? {
-        TranslationModel.availableModels.first { $0.id == "hy-mt1.5-1.8b-2bit" }
+    private var downloadedModels: [TranslationModel] {
+        TranslationModel.availableModels.filter { downloadManager.isModelDownloaded($0) }
     }
 
     var body: some View {
         List {
-            // MARK: - Engine Status
-            Section {
-                engineStatusRow
-            } header: {
-                Text("Translation Engine")
-            } footer: {
-                Text("Translations run entirely on-device using the STQ1_0 quantized model. No data leaves your iPhone.")
-                    .font(.caption)
-            }
+            // Active model
+            activeModelSection
 
-            // MARK: - Storage
-            if let model = tencentModel, downloadManager.isModelDownloaded(model) {
-                Section {
-                    storageRow(model: model)
-                } header: {
-                    Text("Storage")
-                } footer: {
-                    HStack {
-                        Image(systemName: "info.circle")
-                        Text("Total app storage: \(formattedTotalStorage)")
-                    }
-                    .font(.caption)
-                }
-            } else {
-                Section {
-                    HStack(spacing: 12) {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.title3)
-                            .foregroundStyle(.indigo)
-                            .frame(width: 32)
+            // Downloaded models
+            downloadedModelsSection
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("No model downloaded")
-                                .font(.body)
-                            Text("Visit the Translate tab to download the offline engine.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } header: {
-                    Text("Storage")
-                }
-            }
+            // Browse more models
+            browseMoreSection
 
-            // MARK: - Technical Info
-            Section {
-                LabeledContent("Backend", value: "llama.cpp PR #22836 (stq-kernel)")
-                LabeledContent("Quantization", value: "STQ1_0 (1.25-bit Sherry)")
-                LabeledContent("Compute", value: "CPU / ARM NEON")
-                LabeledContent("Metal GPU", value: "Disabled (CPU-optimized)")
-            } header: {
-                Text("Technical Info")
-            }
+            // Storage
+            storageSection
+
+            // About
+            aboutSection
         }
         .listStyle(.insetGrouped)
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.large)
+        .sheet(isPresented: $showModelSheet) {
+            NavigationStack {
+                ModelSelectionSheet(
+                    lifecycleManager: lifecycleManager,
+                    downloadManager: downloadManager,
+                    selectedModelID: $selectedModelID
+                )
+            }
+        }
+        .confirmationDialog(
+            "Delete Model?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible,
+            presenting: modelToDelete
+        ) { model in
+            Button("Delete \(model.formattedSize)", role: .destructive) {
+                performDelete(model)
+            }
+            Button("Keep", role: .cancel) {}
+        } message: { model in
+            Text("Remove \(model.displayName) from your device? You can re-download it anytime.")
+        }
     }
 
-    // MARK: - Engine Status Row
+    // MARK: - Active Model
 
-    @ViewBuilder
-    private var engineStatusRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "cpu.fill")
-                .font(.title3)
-                .foregroundStyle(isActive ? .green : .indigo)
-                .frame(width: 32)
+    private var activeModelSection: some View {
+        Section {
+            if let model = activeModel {
+                HStack(spacing: 12) {
+                    providerIcon(for: model)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Tencent Hy-MT1.5 1.8B")
-                    .font(.body)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.displayName)
+                            .font(.body)
+                        Text(model.provider)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
-                Text(statusText)
-                    .font(.caption)
+                    Spacer()
+
+                    if isActive {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 6, height: 6)
+                            Text("Active")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: "cpu")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, height: 36)
+                        .background(Color(.tertiarySystemFill))
+                        .clipShape(Circle())
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("No model active")
+                            .font(.body)
+                        Text("Download a model to start translating")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Downloaded Models
+
+    private var downloadedModelsSection: some View {
+        Section("Downloaded Models") {
+            if downloadedModels.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "icloud.and.arrow.down")
+                        .font(.title3)
+                        .foregroundStyle(.indigo)
+                        .frame(width: 32)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No models downloaded")
+                            .font(.body)
+                        Text("Browse the model hub to download offline engines.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                ForEach(downloadedModels) { model in
+                    modelRow(model)
+                }
+            }
+        }
+    }
+
+    private func modelRow(_ model: TranslationModel) -> some View {
+        Button {
+            selectModel(model)
+        } label: {
+            HStack(spacing: 12) {
+                providerIcon(for: model)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.displayName)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Text("\(model.formattedSize)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if lifecycleManager.activeModelID == model.id && lifecycleManager.isModelReady {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                } else if model.id == selectedModelID {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.indigo)
+                        .font(.caption.weight(.semibold))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                confirmDelete(model)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    // MARK: - Browse More Models
+
+    private var browseMoreSection: some View {
+        Section {
+            Button {
+                showModelSheet = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.indigo)
+                        .frame(width: 36, height: 36)
+                        .background(Color.indigo.opacity(0.12))
+                        .clipShape(Circle())
+
+                    Text("Browse Models")
+                        .font(.body)
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+        } header: {
+            Text("Download Models")
+        } footer: {
+            Text("Download more models to translate offline.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Storage
+
+    private var storageSection: some View {
+        Section("Storage") {
+            HStack {
+                Text("Models on device")
+                    .font(.subheadline)
+                Spacer()
+                Text(formattedTotalStorage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+            .padding(.vertical, 2)
+
+            if !downloadedModels.isEmpty {
+                ForEach(downloadedModels) { model in
+                    HStack {
+                        Text(model.displayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(model.formattedSize)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 1)
+                }
+            }
+        }
+    }
+
+    // MARK: - About
+
+    private var aboutSection: some View {
+        Section {
+            HStack {
+                Text("Version")
+                Spacer()
+                Text(appVersion)
                     .foregroundStyle(.secondary)
             }
 
-            Spacer()
-
-            if isActive {
-                Image(systemName: "checkmark.circle.fill")
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield")
+                    .font(.caption)
                     .foregroundStyle(.green)
-            } else if deleteSuccess {
-                Image(systemName: "checkmark")
-                    .foregroundStyle(.green)
+                Text("All translations run on-device. No data leaves your iPhone.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            .padding(.vertical, 2)
+        } header: {
+            Text("About")
+        } footer: {
+            Text("Voco · Offline Translation")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 8)
         }
+    }
+
+    // MARK: - Helpers
+
+    private var activeModel: TranslationModel? {
+        guard let id = lifecycleManager.activeModelID else { return nil }
+        return TranslationModel.availableModels.first { $0.id == id }
     }
 
     private var isActive: Bool {
@@ -113,108 +290,49 @@ struct SettingsView: View {
         return false
     }
 
-    private var statusText: String {
-        if isActive {
-            return "Active — Model loaded in memory"
-        } else if let model = tencentModel, downloadManager.isModelDownloaded(model) {
-            return "Ready — \(model.formattedSize) downloaded"
-        } else {
-            return "Not downloaded — Tap Translate tab to download"
-        }
-    }
-
-    // MARK: - Storage Row
-
-    private func storageRow(model: TranslationModel) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: "internaldrive.fill")
-                    .font(.title3)
-                    .foregroundStyle(.orange)
-                    .frame(width: 32)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.displayName)
-                        .font(.body)
-
-                    Text("\(model.formattedSize) · 1.25-bit STQ1_0")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color(.tertiarySystemFill))
-                                .frame(height: 6)
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.orange.opacity(0.7))
-                                .frame(width: storageBarWidth(in: geo.size.width), height: 6)
-                        }
-                    }
-                    .frame(height: 6)
-                    .padding(.top, 4)
-                }
-            }
-
-            // Delete button
-            Button(role: .destructive) {
-                showDeleteConfirmation = true
-            } label: {
-                HStack {
-                    Image(systemName: "trash")
-                    Text("Delete Model")
-                }
-                .font(.subheadline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.borderless)
-            .padding(.top, 12)
-        }
-        .confirmationDialog(
-            "Delete Translation Engine?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete \(model.formattedSize)", role: .destructive) {
-                performDelete(model)
-            }
-            Button("Keep", role: .cancel) {}
-        } message: {
-            Text("This will remove the offline translation engine from your device. You can re-download it anytime.")
-        }
-    }
-
-    // MARK: - Helpers
-
     private var formattedTotalStorage: String {
         ByteCountFormatter.string(fromByteCount: downloadManager.totalDiskUsage(), countStyle: .file)
     }
 
-    private func storageBarWidth(in totalWidth: CGFloat) -> CGFloat {
-        guard let model = tencentModel else { return 0 }
-        let totalBytes = downloadManager.totalDiskUsage()
-        guard totalBytes > 0 else { return 0 }
-        let ratio = CGFloat(model.fileSizeBytes) / CGFloat(totalBytes)
-        return max(ratio * totalWidth, 4)
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        return "\(version) (\(build))"
+    }
+
+    private func providerIcon(for model: TranslationModel) -> some View {
+        Image(systemName: model.providerIcon)
+            .font(.system(size: 16))
+            .foregroundStyle(model.providerColor)
+            .frame(width: 36, height: 36)
+            .background(model.providerColor.opacity(0.12))
+            .clipShape(Circle())
+    }
+
+    // MARK: - Actions
+
+    private func selectModel(_ model: TranslationModel) {
+        guard model.id != selectedModelID else { return }
+        if lifecycleManager.activeModelID != nil {
+            Task { await lifecycleManager.deactivate() }
+        }
+        selectedModelID = model.id
+        if downloadManager.isModelDownloaded(model) {
+            Task { try? await lifecycleManager.activate(model) }
+        }
+    }
+
+    private func confirmDelete(_ model: TranslationModel) {
+        modelToDelete = model
+        showDeleteConfirmation = true
     }
 
     private func performDelete(_ model: TranslationModel) {
-        // Unload if active
         if lifecycleManager.activeModelID == model.id {
             Task { await lifecycleManager.deactivate() }
         }
-
-        // Delete file
         do {
             try downloadManager.deleteModel(model)
-            withAnimation {
-                deleteSuccess = true
-            }
-            // Reset after a moment
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                deleteSuccess = false
-            }
         } catch {
             print("[Settings] Delete error: \(error)")
         }

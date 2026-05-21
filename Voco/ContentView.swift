@@ -2,8 +2,7 @@
 //  ContentView.swift
 //  Voco
 //
-//  Root view with tab navigation. Supports multi-model selection
-//  organized by provider with lazy model lifecycle.
+//  Single-page root. No tabs. Settings accessed via top-right gear.
 //
 
 import SwiftUI
@@ -11,34 +10,18 @@ import SwiftUI
 struct ContentView: View {
     @State private var lifecycleManager = ModelLifecycleManager()
     @State private var downloadManager = ModelManagerService()
-    @State private var selectedTab = 0
     @State private var selectedModelID: String = "hy-mt1.5-1.8b-stq"
 
-    private var selectedModel: TranslationModel? {
-        TranslationModel.availableModels.first { $0.id == selectedModelID }
-    }
-
     var body: some View {
-        TabView(selection: $selectedTab) {
-            TranslateTab(
+        NavigationStack {
+            TranslateRoot(
                 lifecycleManager: lifecycleManager,
                 downloadManager: downloadManager,
                 selectedModelID: $selectedModelID
             )
-            .tabItem { Label("Translate", systemImage: "character.bubble.fill") }
-            .tag(0)
-
-            SettingsView(lifecycleManager: lifecycleManager,
-                        downloadManager: downloadManager)
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-                .tag(1)
         }
-        .tint(.indigo)
         .onChange(of: selectedModelID) { _, newID in
             autoActivateModel(newID)
-        }
-        .onChange(of: selectedTab) { _, newTab in
-            if newTab == 0 { autoActivateModel(selectedModelID) }
         }
         .onAppear {
             autoActivateModel(selectedModelID)
@@ -56,108 +39,95 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Translate Tab
+// MARK: - Translate Root
 
-private struct TranslateTab: View {
+private struct TranslateRoot: View {
     let lifecycleManager: ModelLifecycleManager
     let downloadManager: ModelManagerService
     @Binding var selectedModelID: String
+
+    @State private var showModelSheet = false
+    @State private var showSettings = false
 
     private var selectedModel: TranslationModel? {
         TranslationModel.availableModels.first { $0.id == selectedModelID }
     }
 
-    /// Models grouped by provider, sorted.
-    private var providerGroups: [(provider: String, models: [TranslationModel])] {
-        let grouped = Dictionary(grouping: TranslationModel.availableModels, by: { $0.provider })
-        return grouped
-            .map { (provider: $0.key, models: $0.value) }
-            .sorted { $0.provider < $1.provider }
-    }
-
     var body: some View {
-        NavigationStack {
-            Group {
-                if let model = selectedModel, isModelReady(for: model.id) {
-                    TranslationView(lifecycleManager: lifecycleManager)
-                } else if let model = selectedModel {
-                    OnboardingView(model: model,
-                                   lifecycleManager: lifecycleManager,
-                                   downloadManager: downloadManager)
-                } else {
-                    ContentUnavailableView("No Models",
-                        systemImage: "square.stack.3d.up",
-                        description: Text("No translation models are available."))
+        Group {
+            if let model = selectedModel, isModelReady(for: model.id) {
+                TranslationView(
+                    lifecycleManager: lifecycleManager,
+                    downloadManager: downloadManager,
+                    selectedModelID: $selectedModelID
+                )
+            } else if let model = selectedModel {
+                OnboardingView(
+                    model: model,
+                    lifecycleManager: lifecycleManager,
+                    downloadManager: downloadManager
+                )
+            } else {
+                ContentUnavailableView(
+                    "No Models",
+                    systemImage: "square.stack.3d.up",
+                    description: Text("No translation models are available.")
+                )
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                modelPickerButton
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.primary)
                 }
             }
-            .navigationTitle("Voco")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    modelPickerMenu
-                }
+        }
+        .sheet(isPresented: $showModelSheet) {
+            NavigationStack {
+                ModelSelectionSheet(
+                    lifecycleManager: lifecycleManager,
+                    downloadManager: downloadManager,
+                    selectedModelID: $selectedModelID
+                )
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                SettingsView(
+                    lifecycleManager: lifecycleManager,
+                    downloadManager: downloadManager,
+                    selectedModelID: $selectedModelID
+                )
             }
         }
     }
 
-    private var modelPickerMenu: some View {
-        Menu {
-            ForEach(providerGroups, id: \.provider) { group in
-                Section(group.provider) {
-                    ForEach(group.models) { model in
-                        Button {
-                            switchToModel(model)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(model.displayName)
-                                        .font(.subheadline)
-                                    Text("\(model.quantization) · \(model.formattedSize)")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                if model.id == selectedModelID {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.indigo)
-                                }
-                                Spacer()
-                                // Download/status indicator
-                                modelStatusIcon(model)
-                            }
-                        }
-                    }
-                }
-            }
+    private var modelPickerButton: some View {
+        Button {
+            showModelSheet = true
         } label: {
-            Image(systemName: "cpu.fill")
-                .font(.headline)
+            HStack(spacing: 6) {
+                Image(systemName: selectedModel?.providerIcon ?? "cpu")
+                    .font(.caption)
+                Text(selectedModel?.displayName ?? "Select Model")
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color(.tertiarySystemFill))
+            .clipShape(Capsule())
         }
-    }
-
-    @ViewBuilder
-    private func modelStatusIcon(_ model: TranslationModel) -> some View {
-        if isModelReady(for: model.id) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.caption)
-        } else if downloadManager.isModelDownloaded(model) {
-            Image(systemName: "arrow.down.circle.fill")
-                .foregroundStyle(.indigo)
-                .font(.caption)
-        } else {
-            Image(systemName: "icloud.and.arrow.down")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-        }
-    }
-
-    private func switchToModel(_ model: TranslationModel) {
-        guard model.id != selectedModelID else { return }
-        // If current model is active, deactivate it
-        if lifecycleManager.activeModelID != nil {
-            Task { await lifecycleManager.deactivate() }
-        }
-        selectedModelID = model.id
+        .tint(.primary)
     }
 
     private func isModelReady(for id: String) -> Bool {

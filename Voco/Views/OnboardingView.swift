@@ -2,7 +2,7 @@
 //  OnboardingView.swift
 //  Voco
 //
-//  Download and activation flow for the local Tencent engine.
+//  Download and activation flow for any local translation model.
 //
 
 import SwiftUI
@@ -40,21 +40,37 @@ struct OnboardingView: View {
             // Hero
             VStack(spacing: 16) {
                 ZStack {
-                    Circle().fill(.indigo.opacity(0.12)).frame(width: 120, height: 120)
-                    Image(systemName: "lock.shield.fill")
+                    Circle()
+                        .fill(model.providerColor.opacity(0.12))
+                        .frame(width: 120, height: 120)
+                    Image(systemName: model.providerIcon)
                         .font(.system(size: 52))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(model.providerColor)
                         .symbolEffect(.bounce, value: showSuccess)
                 }
-                Text("Unlock Offline AI").font(.title2.bold())
-                Text("Download the translation engine and translate anywhere, completely offline and private.")
-                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+
+                Text(model.displayName)
+                    .font(.title2.bold())
+                    .multilineTextAlignment(.center)
+
+                Text("Download \(model.provider)'s translation engine and translate anywhere, completely offline and private.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+
                 HStack(spacing: 8) {
                     Label(model.formattedSize, systemImage: "internaldrive")
                     Text("·")
-                    Label("1.8B params", systemImage: "cpu")
+                    Label("\(model.parameterCount) params", systemImage: "cpu")
                 }
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                HStack(spacing: 6) {
+                    Badge(text: model.quantization, color: model.providerColor)
+                    Badge(text: model.speedRating, color: .secondary)
+                    Badge(text: model.qualityRating, color: .secondary)
+                }
             }
             .padding(.horizontal, 32)
 
@@ -70,8 +86,10 @@ struct OnboardingView: View {
                     }
                     Text(buttonLabel).fontWeight(.semibold)
                 }
-                .frame(maxWidth: .infinity).padding(.vertical, 16)
-                .background(buttonColor).foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(buttonColor)
+                .foregroundStyle(.white)
                 .clipShape(Capsule())
                 .shadow(color: buttonColor.opacity(0.3), radius: 8, y: 4)
             }
@@ -82,7 +100,7 @@ struct OnboardingView: View {
             if isDownloading {
                 VStack(spacing: 6) {
                     ProgressView(value: downloadProgress)
-                        .tint(.indigo)
+                        .tint(model.providerColor)
                         .padding(.horizontal, 32)
 
                     Text("\(formattedDownloadedBytes) of \(model.formattedSize)")
@@ -95,17 +113,13 @@ struct OnboardingView: View {
             // Legal
             HStack(alignment: .top, spacing: 4) {
                 Image(systemName: "doc.text").font(.caption2)
-                Text("Model weights are downloaded directly from Hugging Face and are subject to the ")
+                Text("Model weights are downloaded directly from Hugging Face and are subject to the provider's license.")
                     .font(.footnote)
-                + Text("Tencent HY Community License.")
-                    .font(.footnote).underline().foregroundStyle(.indigo)
             }
-            .foregroundStyle(.secondary).multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 32)
-            .onTapGesture {
-                openURL(URL(string: "https://huggingface.co/AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF/blob/main/License.txt")!)
-            }
 
             Spacer()
         }
@@ -124,8 +138,8 @@ struct OnboardingView: View {
 
     private var buttonColor: Color {
         if showSuccess { return .green }
-        if isDownloading || isActivating { return .indigo.opacity(0.6) }
-        return .indigo
+        if isDownloading || isActivating { return model.providerColor.opacity(0.6) }
+        return model.providerColor
     }
 
     /// Bytes downloaded so far based on progress × expected size.

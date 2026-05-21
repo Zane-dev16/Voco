@@ -2,8 +2,9 @@
 //  TranslationView.swift
 //  Voco
 //
-//  Main translation workspace with streaming output,
-//  language picker, and micro-interactions.
+//  Main translation workspace with input, streaming output, and actions.
+//  Clean, minimal, full-screen layout with large tappable areas,
+//  soft shadows, and floating action buttons.
 //
 
 import SwiftUI
@@ -11,37 +12,93 @@ import UIKit
 
 struct TranslationView: View {
     let lifecycleManager: ModelLifecycleManager
+    let downloadManager: ModelManagerService
+    @Binding var selectedModelID: String
+
+    // MARK: - State
 
     @State private var inputText: String = ""
     @State private var outputText: String = ""
     @State private var sourceLanguage: Language = .english
     @State private var targetLanguage: Language = .spanish
     @State private var isTranslating: Bool = false
-    @State private var showShimmer: Bool = false
+    @State private var showShareSheet = false
+    @State private var showCopyToast = false
+    @State private var errorMessage: String?
+    @State private var isRecording = false
+    @State private var speechService: SpeechService?
+    @State private var swapRotation: Double = 0
     @FocusState private var isInputFocused: Bool
+    @State private var pickerMode: PickerMode? = nil
 
-    /// Haptic generator for streaming feedback.
+    // MARK: - Services
+
     private let haptic = UIImpactFeedbackGenerator(style: .soft)
+    private let ttsService = TTSService()
+
+    // MARK: - Computed
+
+    private var activeModel: TranslationModel? {
+        TranslationModel.availableModels.first { $0.id == lifecycleManager.activeModelID }
+    }
+
+    private var canTranslate: Bool {
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isTranslating
+    }
+
+    // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Input section
-            inputSection
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
 
-            Divider()
-                .padding(.horizontal)
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Language selector
+                    languageSelector
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 16)
 
-            // Language picker
-            languagePicker
+                    // Input area
+                    inputArea
+                        .padding(.horizontal, 20)
 
-            Divider()
-                .padding(.horizontal)
+                    // Translate button
+                    translateButton
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
 
-            // Output section
-            outputSection
+                    // Output area
+                    outputArea
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 24)
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .scrollBounceBehavior(.basedOnSize)
+
+            // Copy toast
+            VStack {
+                Spacer()
+                if showCopyToast {
+                    CopyToast()
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .padding(.bottom, 24)
+                }
+            }
+
+            // Error overlay
+            if let error = errorMessage {
+                VStack {
+                    errorBanner(message: error)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                    Spacer()
+                }
+            }
         }
-        .background(Color(.systemBackground))
-        .onTapGesture { isInputFocused = false }
         .onAppear { haptic.prepare() }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -50,243 +107,422 @@ struct TranslationView: View {
                     .fontWeight(.semibold)
             }
         }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheet(activityItems: [outputText])
+        }
     }
 
-    // MARK: - Input
+    // MARK: - Picker
 
-    private var inputSection: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Input")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+    private enum PickerMode: Identifiable {
+        case source, target
+        var id: Int { hashValue }
+    }
+
+    // MARK: - Language Selector
+
+    private var languageSelector: some View {
+        HStack(spacing: 0) {
+            Button {
+                pickerMode = .source
+            } label: {
+                Text(sourceLanguage.displayName)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(width: 130, alignment: .center)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                    swapRotation += 180
+                    swapLanguages()
+                }
+            } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.indigo)
+                    .frame(width: 36, height: 36)
+                    .rotationEffect(.degrees(swapRotation))
+            }
+            .buttonStyle(.plain)
+            .frame(width: 52)
+
+            Button {
+                pickerMode = .target
+            } label: {
+                Text(targetLanguage.displayName)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.indigo)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(width: 130, alignment: .center)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 12)
+        .sheet(item: $pickerMode) { mode in
+            NavigationStack {
+                List(Language.allCases) { lang in
+                    Button {
+                        if mode == .source {
+                            sourceLanguage = lang
+                        } else {
+                            targetLanguage = lang
+                        }
+                        pickerMode = nil
+                    } label: {
+                        HStack {
+                            Text(lang.displayName)
+                            Spacer()
+                            if (mode == .source && lang == sourceLanguage) ||
+                               (mode == .target && lang == targetLanguage) {
+                                Image(systemName: "checkmark")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.indigo)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                .listStyle(.plain)
+                .navigationTitle(mode == .source ? "Source Language" : "Target Language")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { pickerMode = nil }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Input Area
+
+    private var inputArea: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TextEditor(text: $inputText)
+                .font(.system(size: 22, weight: .regular, design: .rounded))
+                .focused($isInputFocused)
+                .scrollContentBackground(.hidden)
+                .frame(height: 140)
+                .overlay(alignment: .topLeading) {
+                    if inputText.isEmpty {
+                        Text("Enter text to translate...")
+                            .font(.system(size: 22, weight: .regular, design: .rounded))
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+
+            HStack(spacing: 16) {
+                // Mic button
+                Button {
+                    toggleRecording()
+                } label: {
+                    Image(systemName: isRecording ? "waveform" : "mic.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(isRecording ? .red : .indigo)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            (isRecording ? Color.red : Color.indigo)
+                                .opacity(0.1)
+                        )
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .symbolEffect(.pulse, options: .repeating, value: isRecording)
 
                 Spacer()
 
+                // Clear / Paste
                 if !inputText.isEmpty {
-                    Button("Clear") {
+                    Button {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             inputText = ""
                             outputText = ""
                             isTranslating = false
+                            errorMessage = nil
                         }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 36, height: 36)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.indigo)
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        if let pasted = UIPasteboard.general.string {
+                            withAnimation(.spring(response: 0.3)) {
+                                inputText = pasted
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.indigo)
+                            .frame(width: 36, height: 36)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-
-            TextEditor(text: $inputText)
-                .font(.body)
-                .focused($isInputFocused)
-                .scrollContentBackground(.hidden)
-                .background(Color(.tertiarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .overlay(alignment: .topLeading) {
-                    if inputText.isEmpty {
-                        Text("Enter text to translate...")
-                            .font(.body)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 12)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .frame(minHeight: 100, maxHeight: 180)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-
-            // Translate button
-            translateButton
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
         }
+        .background(
+            RoundedRectangle(cornerRadius: 28)
+                .fill(Color(.secondarySystemGroupedBackground))
+                .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 4)
+        )
     }
+
+    // MARK: - Translate Button
 
     private var translateButton: some View {
         Button {
             performTranslation()
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 if isTranslating {
                     ProgressView()
                         .tint(.white)
                         .scaleEffect(0.8)
                     Text("Translating...")
-                        .font(.subheadline.bold())
+                        .font(.headline.weight(.semibold))
                 } else {
                     Image(systemName: "arrow.triangle.swap")
-                        .font(.subheadline)
+                        .font(.headline)
                     Text("Translate")
-                        .font(.subheadline.bold())
+                        .font(.headline.weight(.semibold))
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? Color.indigo.opacity(0.3)
-                        : Color.indigo)
+            .padding(.vertical, 18)
+            .background(canTranslate ? Color.indigo : Color.indigo.opacity(0.3))
             .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: .indigo.opacity(0.2), radius: 4, y: 2)
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .shadow(
+                color: canTranslate ? .indigo.opacity(0.3) : .clear,
+                radius: 12, y: 6
+            )
         }
-        .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTranslating)
+        .disabled(!canTranslate)
+        .scaleEffect(canTranslate ? 1.0 : 0.97)
+        .animation(.spring(response: 0.2), value: canTranslate)
     }
 
-    // MARK: - Language Picker
+    // MARK: - Output Area
 
-    private var languagePicker: some View {
-        HStack(spacing: 8) {
-            Menu {
-                ForEach(Language.allCases) { lang in
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            sourceLanguage = lang
-                        }
-                    } label: {
-                        HStack {
-                            Text("\(lang.flag) \(lang.displayName)")
-                            if lang == sourceLanguage {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Label(sourceLanguage.displayName, systemImage: "textformat")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 12)
-                    .background(Color(.tertiarySystemBackground))
-                    .clipShape(Capsule())
-            }
-
-            Button {
-                swapLanguages()
-            } label: {
-                Image(systemName: "arrow.left.arrow.right")
-                    .font(.caption.bold())
-                    .foregroundStyle(.indigo)
-                    .padding(6)
-            }
-            .buttonStyle(.plain)
-
-            Menu {
-                ForEach(Language.allCases) { lang in
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            targetLanguage = lang
-                        }
-                    } label: {
-                        HStack {
-                            Text("\(lang.flag) \(lang.displayName)")
-                            if lang == targetLanguage {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Label(targetLanguage.displayName, systemImage: "globe")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 12)
-                    .background(Color.indigo.opacity(0.1))
-                    .clipShape(Capsule())
+    private var outputArea: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if outputText.isEmpty && !isTranslating {
+                placeholderOutput
+            } else if isTranslating && outputText.isEmpty {
+                translatingState
+            } else {
+                resultOutput
             }
         }
-        .padding(.vertical, 10)
-    }
-
-    private func swapLanguages() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            let temp = sourceLanguage
-            sourceLanguage = targetLanguage
-            targetLanguage = temp
-        }
-    }
-
-    // MARK: - Output
-
-    private var outputSection: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Translation")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-
-                Spacer()
-
-                if isTranslating {
-                    ShimmerText()
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if outputText.isEmpty && !isTranslating {
-                            placeholderOutput
-                        } else if outputText.isEmpty && isTranslating {
-                            VStack(spacing: 12) {
-                                ProgressView()
-                                    .scaleEffect(1.2)
-                                    .tint(.indigo)
-                                Text("Waking up AI...")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 120)
-                        } else {
-                            Text(outputText)
-                                .font(.title3)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.primary)
-                                .multilineTextAlignment(.leading)
-                                .padding(.horizontal, 4)
-                                .id("output-bottom")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                }
-                .background(Color(.tertiarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-                .onChange(of: outputText) { _, _ in
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo("output-bottom", anchor: .bottom)
-                    }
-                }
-            }
-        }
+        .background(
+            RoundedRectangle(cornerRadius: 28)
+                .fill(Color(.secondarySystemGroupedBackground))
+                .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 4)
+        )
     }
 
     private var placeholderOutput: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 16) {
             Image(systemName: "sparkles")
-                .font(.title2)
-                .foregroundStyle(.indigo.opacity(0.4))
-            Text("Your translation will appear here")
-                .font(.subheadline)
+                .font(.system(size: 40))
+                .foregroundStyle(.indigo.opacity(0.2))
+            Text("Translation will appear here")
+                .font(.body)
                 .foregroundStyle(.tertiary)
         }
-        .frame(maxWidth: .infinity, minHeight: 120)
+        .frame(maxWidth: .infinity, minHeight: 180)
+        .padding(.vertical, 32)
+    }
+
+    private var translatingState: some View {
+        VStack(spacing: 20) {
+            TranslatingDots()
+                .frame(height: 40)
+
+            Text("Translating with \(activeModel?.displayName ?? "AI")...")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 180)
+        .padding(.vertical, 32)
+    }
+
+    private var resultOutput: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(outputText)
+                        .font(.system(size: 22, weight: .medium, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineSpacing(6)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 20)
+                        .id("output-end")
+                }
+                .onChange(of: outputText) { _, _ in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("output-end", anchor: .bottom)
+                    }
+                }
+            }
+            .frame(minHeight: 80, maxHeight: 220)
+
+            // Action bar
+            HStack(spacing: 0) {
+                actionButton(icon: "speaker.wave.2.fill", action: speakOutput)
+                Divider().frame(height: 24)
+                actionButton(icon: "doc.on.doc", action: copyOutput)
+                Divider().frame(height: 24)
+                actionButton(icon: "square.and.arrow.up", action: { showShareSheet = true })
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private func actionButton(icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundStyle(.indigo)
+                .frame(maxWidth: .infinity, minHeight: 48)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Error Banner
+
+    private func errorBanner(message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer()
+            Button {
+                withAnimation(.spring(response: 0.3)) {
+                    errorMessage = nil
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.orange.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Actions
+
+    private func swapLanguages() {
+        let temp = sourceLanguage
+        sourceLanguage = targetLanguage
+        targetLanguage = temp
+        if !outputText.isEmpty && !isTranslating {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                inputText = outputText
+                outputText = ""
+                errorMessage = nil
+            }
+        }
+    }
+
+    private func copyOutput() {
+        UIPasteboard.general.string = outputText
+        withAnimation(.spring(response: 0.3)) {
+            showCopyToast = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation(.spring(response: 0.3)) {
+                showCopyToast = false
+            }
+        }
+    }
+
+    private func speakOutput() {
+        guard !outputText.isEmpty else { return }
+        let voices = ttsService.availableVoices(forLanguage: targetLanguage.code)
+        ttsService.speak(outputText, voice: voices.first)
+    }
+
+    private func toggleRecording() {
+        guard !isRecording else {
+            stopRecording()
+            return
+        }
+        startRecording()
+    }
+
+    private func startRecording() {
+        Task {
+            let granted = await SpeechService.requestPermissions()
+            guard granted else { return }
+
+            do {
+                let locale = Locale(identifier: sourceLanguage.code)
+                let service = try SpeechService(locale: locale)
+                service.onTranscription = { text in
+                    Task { @MainActor in
+                        self.inputText = text
+                    }
+                }
+                service.onComplete = { text in
+                    Task { @MainActor in
+                        if let text { self.inputText = text }
+                        self.isRecording = false
+                    }
+                }
+                service.onError = { _ in
+                    Task { @MainActor in
+                        self.isRecording = false
+                    }
+                }
+                try service.startRecording()
+                await MainActor.run {
+                    self.speechService = service
+                    self.isRecording = true
+                }
+            } catch {
+                print("[TranslationView] Speech error: \(error)")
+                isRecording = false
+            }
+        }
+    }
+
+    private func stopRecording() {
+        speechService?.stopRecording()
+        speechService = nil
+        isRecording = false
     }
 
     // MARK: - Translation Logic
+    // NOTE: Preserved exactly for hy-mt1.5-1.8b-stq STQ1_0 compatibility.
 
     private func performTranslation() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -294,7 +530,7 @@ struct TranslationView: View {
 
         isTranslating = true
         outputText = ""
-        showShimmer = true
+        errorMessage = nil
 
         let targetLang = targetLanguage.hunyuanTargetName
 
@@ -316,7 +552,6 @@ struct TranslationView: View {
                     await MainActor.run {
                         outputText = fullOutput
 
-                        // Light haptic every ~3 tokens (like ChatGPT)
                         if tokenCount % 3 == 0 {
                             haptic.impactOccurred(intensity: 0.4)
                         }
@@ -325,48 +560,88 @@ struct TranslationView: View {
 
                 await MainActor.run {
                     isTranslating = false
-                    showShimmer = false
-                    // Final strong haptic
                     haptic.impactOccurred(intensity: 0.8)
                 }
             } catch {
                 await MainActor.run {
-                    outputText = "Error: \(error.localizedDescription)"
+                    errorMessage = error.localizedDescription
                     isTranslating = false
-                    showShimmer = false
                 }
             }
         }
     }
 }
 
-// MARK: - Shimmer Effect
+// MARK: - Translating Dots Animation
 
-private struct ShimmerText: View {
-    @State private var phase: CGFloat = -1
+private struct TranslatingDots: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<5) { i in
+                PulsingDot(delay: Double(i) * 0.1)
+            }
+        }
+    }
+}
+
+private struct PulsingDot: View {
+    let delay: Double
+    @State private var isActive = false
 
     var body: some View {
-        Text("AI translating...")
-            .font(.caption)
-            .foregroundStyle(.indigo.opacity(0.6))
-            .overlay {
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.clear, .indigo.opacity(0.3), .clear],
-                                startPoint: UnitPoint(x: phase, y: 0.5),
-                                endPoint: UnitPoint(x: phase + 0.2, y: 0.5)
-                            )
-                        )
-                        .frame(width: geo.size.width * 0.6)
-                }
-            }
-            .mask { Text("AI translating...").font(.caption) }
+        Circle()
+            .fill(Color.indigo)
+            .frame(width: 8, height: 8)
+            .opacity(isActive ? 1.0 : 0.25)
+            .offset(y: isActive ? -6 : 0)
             .onAppear {
-                withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) {
-                    phase = 2
+                withAnimation(
+                    .easeInOut(duration: 0.45)
+                    .repeatForever(autoreverses: true)
+                    .delay(delay)
+                ) {
+                    isActive = true
                 }
             }
     }
+}
+
+// MARK: - Copy Toast
+
+private struct CopyToast: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text("Copied to clipboard")
+                .font(.subheadline.weight(.medium))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+    }
+}
+
+// MARK: - Share Sheet
+
+private struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Preview
+
+#Preview {
+    TranslationView(
+        lifecycleManager: ModelLifecycleManager(),
+        downloadManager: ModelManagerService(),
+        selectedModelID: .constant("hy-mt1.5-1.8b-stq")
+    )
 }
