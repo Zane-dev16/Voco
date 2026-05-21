@@ -116,7 +116,12 @@ struct TranslationView: View {
 
     private enum PickerMode: Identifiable {
         case source, target
-        var id: Int { hashValue }
+        var id: String {
+            switch self {
+            case .source: return "source"
+            case .target: return "target"
+            }
+        }
     }
 
     // MARK: - Language Selector
@@ -197,6 +202,7 @@ struct TranslationView: View {
                     }
                 }
             }
+            .presentationDetents([.large])
         }
     }
 
