@@ -122,7 +122,7 @@ struct SettingsView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "icloud.and.arrow.down")
                         .font(.title3)
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(.blue)
                         .frame(width: 32)
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -165,7 +165,7 @@ struct SettingsView: View {
                         .font(.caption)
                 } else if model.id == selectedModelID {
                     Image(systemName: "checkmark")
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(.blue)
                         .font(.caption.weight(.semibold))
                 }
             }
@@ -190,9 +190,9 @@ struct SettingsView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "square.grid.2x2")
                         .font(.system(size: 16))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(.blue)
                         .frame(width: 36, height: 36)
-                        .background(Color.indigo.opacity(0.12))
+                        .background(Color.blue.opacity(0.12))
                         .clipShape(Circle())
 
                     Text("Browse Models")

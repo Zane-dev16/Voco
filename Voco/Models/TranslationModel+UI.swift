@@ -13,7 +13,7 @@ extension TranslationModel {
         switch provider {
         case "Tencent": return .blue
         case "Qwen": return .purple
-        case "Meta": return .indigo
+        case "Meta": return .blue
         case "Google": return .teal
         default: return .gray
         }

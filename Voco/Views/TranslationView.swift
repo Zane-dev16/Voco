@@ -126,7 +126,7 @@ struct TranslationView: View {
                                 Spacer()
                                 Image(systemName: "checkmark")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.indigo)
+                                    .foregroundStyle(.blue)
                             }
                         }
                     }
@@ -150,7 +150,7 @@ struct TranslationView: View {
             } label: {
                 Image(systemName: "arrow.left.arrow.right")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(.blue)
                     .frame(width: 36, height: 36)
                     .rotationEffect(.degrees(swapRotation))
             }
@@ -168,7 +168,7 @@ struct TranslationView: View {
                                 Spacer()
                                 Image(systemName: "checkmark")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.indigo)
+                                    .foregroundStyle(.blue)
                             }
                         }
                     }
@@ -176,7 +176,7 @@ struct TranslationView: View {
             } label: {
                 Text(targetLanguage.displayName)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(.blue)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(width: 130, alignment: .center)
@@ -216,11 +216,11 @@ struct TranslationView: View {
                 } label: {
                     Image(systemName: isRecording ? "waveform" : "mic.fill")
                         .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(isRecording ? .red : .indigo)
+                        .foregroundStyle(isRecording ? .red : .blue)
                         .frame(width: 44, height: 44)
                         .background(
-                            (isRecording ? Color.red : Color.indigo)
-                                .opacity(0.1)
+                            Circle()
+                                .fill(isRecording ? Color.red.opacity(0.12) : Color.blue.opacity(0.12))
                         )
                         .clipShape(Circle())
                 }
@@ -255,7 +255,7 @@ struct TranslationView: View {
                     } label: {
                         Image(systemName: "doc.on.clipboard")
                             .font(.system(size: 18))
-                            .foregroundStyle(.indigo)
+                            .foregroundStyle(.blue)
                             .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.plain)
@@ -293,11 +293,11 @@ struct TranslationView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
-            .background(canTranslate ? Color.indigo : Color.indigo.opacity(0.3))
+            .background(canTranslate ? Color.blue : Color.blue.opacity(0.3))
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: 20))
             .shadow(
-                color: canTranslate ? .indigo.opacity(0.3) : .clear,
+                color: canTranslate ? .blue.opacity(0.3) : .clear,
                 radius: 12, y: 6
             )
         }
@@ -329,7 +329,7 @@ struct TranslationView: View {
         VStack(spacing: 16) {
             Image(systemName: "sparkles")
                 .font(.system(size: 40))
-                .foregroundStyle(.indigo.opacity(0.2))
+                .foregroundStyle(.blue.opacity(0.2))
             Text("Translation will appear here")
                 .font(.body)
                 .foregroundStyle(.tertiary)
@@ -389,7 +389,7 @@ struct TranslationView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 20))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(.blue)
                 .frame(maxWidth: .infinity, minHeight: 48)
         }
         .buttonStyle(.plain)
@@ -578,7 +578,7 @@ private struct PulsingDot: View {
 
     var body: some View {
         Circle()
-            .fill(Color.indigo)
+            .fill(Color.blue)
             .frame(width: 8, height: 8)
             .opacity(isActive ? 1.0 : 0.25)
             .offset(y: isActive ? -6 : 0)

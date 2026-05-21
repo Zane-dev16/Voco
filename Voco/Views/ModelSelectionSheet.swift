@@ -98,7 +98,7 @@ struct ModelSelectionSheet: View {
                     }
                 } else if model.id == selectedModelID {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(.blue)
                         .font(.caption)
                 } else {
                     Image(systemName: "checkmark.circle")
