@@ -29,6 +29,7 @@ struct TranslationModel: Identifiable, Hashable, Sendable {
     let quantization: String
     let config: ModelConfiguration
     let capability: DeviceCapability
+    let parameterCount: String
 
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: fileSizeBytes, countStyle: .file)
@@ -61,7 +62,8 @@ extension TranslationModel {
             hfRepo: "AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF",
             quantization: "1.25-bit STQ1_0",
             config: .hunyuanMT,
-            capability: .simulatorAndDevice
+            capability: .simulatorAndDevice,
+            parameterCount: "1.8B"
         ),
 
         TranslationModel(
@@ -75,7 +77,8 @@ extension TranslationModel {
             hfRepo: "tencent/HY-MT1.5-1.8B-GGUF",
             quantization: "Q4_K_M",
             config: .hunyuanMT,
-            capability: .simulatorAndDevice
+            capability: .simulatorAndDevice,
+            parameterCount: "1.8B"
         ),
 
         // ==================================================================
@@ -93,7 +96,8 @@ extension TranslationModel {
             hfRepo: "Qwen/Qwen3.5-0.5B-Instruct-GGUF",
             quantization: "Q8_0",
             config: .qwenInstruct,
-            capability: .simulatorAndDevice
+            capability: .simulatorAndDevice,
+            parameterCount: "0.5B"
         ),
 
         TranslationModel(
@@ -107,7 +111,8 @@ extension TranslationModel {
             hfRepo: "Qwen/Qwen3.5-3B-Instruct-GGUF",
             quantization: "Q4_K_M",
             config: .qwenInstruct,
-            capability: .deviceRecommended
+            capability: .deviceRecommended,
+            parameterCount: "3B"
         ),
 
         // ==================================================================
@@ -125,7 +130,8 @@ extension TranslationModel {
             hfRepo: "unsloth/Llama-4-Nano-1B-Instruct-GGUF",
             quantization: "Q8_0",
             config: .llamaInstruct,
-            capability: .deviceRecommended
+            capability: .deviceRecommended,
+            parameterCount: "1B"
         ),
 
         TranslationModel(
@@ -139,7 +145,8 @@ extension TranslationModel {
             hfRepo: "unsloth/Llama-4-Scout-3B-Instruct-GGUF",
             quantization: "IQ3_M",
             config: .llamaInstruct,
-            capability: .deviceRecommended
+            capability: .deviceRecommended,
+            parameterCount: "3B"
         ),
 
         // ==================================================================
@@ -157,7 +164,8 @@ extension TranslationModel {
             hfRepo: "ggml-org/gemma-4-E2B-it-GGUF",
             quantization: "Q4_K_M",
             config: .gemmaInstruct,
-            capability: .deviceRecommended
+            capability: .deviceRecommended,
+            parameterCount: "2B"
         ),
 
         TranslationModel(
@@ -171,7 +179,8 @@ extension TranslationModel {
             hfRepo: "ggml-org/gemma-4-E4B-it-GGUF",
             quantization: "IQ2_XXS",
             config: .gemmaInstruct,
-            capability: .deviceRecommended
+            capability: .deviceRecommended,
+            parameterCount: "4B"
         ),
 
         TranslationModel(
@@ -185,7 +194,8 @@ extension TranslationModel {
             hfRepo: "ggml-org/translategemma-4b-it-GGUF",
             quantization: "IQ3_S",
             config: .gemmaInstruct,
-            capability: .deviceRecommended
+            capability: .deviceRecommended,
+            parameterCount: "4B"
         ),
     ]
 }
