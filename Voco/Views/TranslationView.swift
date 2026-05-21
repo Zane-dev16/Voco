@@ -29,7 +29,6 @@ struct TranslationView: View {
     @State private var speechService: SpeechService?
     @State private var swapRotation: Double = 0
     @FocusState private var isInputFocused: Bool
-    @State private var pickerMode: PickerMode? = nil
 
     // MARK: - Services
 
@@ -112,33 +111,36 @@ struct TranslationView: View {
         }
     }
 
-    // MARK: - Picker
-
-    private enum PickerMode: Identifiable {
-        case source, target
-        var id: String {
-            switch self {
-            case .source: return "source"
-            case .target: return "target"
-            }
-        }
-    }
-
     // MARK: - Language Selector
 
     private var languageSelector: some View {
         HStack(spacing: 0) {
-            Button {
-                pickerMode = .source
+            Menu {
+                ForEach(Language.allCases) { lang in
+                    Button {
+                        sourceLanguage = lang
+                    } label: {
+                        HStack {
+                            Text(lang.displayName)
+                            if lang == sourceLanguage {
+                                Spacer()
+                                Image(systemName: "checkmark")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.indigo)
+                            }
+                        }
+                    }
+                }
             } label: {
                 Text(sourceLanguage.displayName)
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: true, vertical: false)
                     .frame(width: 130, alignment: .center)
             }
             .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
 
             Button {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
@@ -155,55 +157,35 @@ struct TranslationView: View {
             .buttonStyle(.plain)
             .frame(width: 52)
 
-            Button {
-                pickerMode = .target
-            } label: {
-                Text(targetLanguage.displayName)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.indigo)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(width: 130, alignment: .center)
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.vertical, 12)
-        .sheet(item: $pickerMode) { mode in
-            NavigationStack {
-                List(Language.allCases) { lang in
+            Menu {
+                ForEach(Language.allCases) { lang in
                     Button {
-                        if mode == .source {
-                            sourceLanguage = lang
-                        } else {
-                            targetLanguage = lang
-                        }
-                        pickerMode = nil
+                        targetLanguage = lang
                     } label: {
                         HStack {
                             Text(lang.displayName)
-                            Spacer()
-                            if (mode == .source && lang == sourceLanguage) ||
-                               (mode == .target && lang == targetLanguage) {
+                            if lang == targetLanguage {
+                                Spacer()
                                 Image(systemName: "checkmark")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.indigo)
                             }
                         }
                     }
-                    .buttonStyle(.plain)
                 }
-                .listStyle(.plain)
-                .navigationTitle(mode == .source ? "Source Language" : "Target Language")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { pickerMode = nil }
-                    }
-                }
+            } label: {
+                Text(targetLanguage.displayName)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.indigo)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: 130, alignment: .center)
             }
-            .presentationDetents([.large])
+            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 12)
     }
 
     // MARK: - Input Area
