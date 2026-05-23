@@ -142,41 +142,29 @@ struct SettingsView: View {
     }
 
     private func modelRow(_ model: TranslationModel) -> some View {
-        Button {
-            selectModel(model)
-        } label: {
-            HStack(spacing: 12) {
-                providerIcon(for: model)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.displayName)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                    Text("\(model.formattedSize)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if lifecycleManager.activeModelID == model.id && lifecycleManager.isModelReady {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.caption)
-                } else if model.id == selectedModelID {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(.blue)
-                        .font(.caption.weight(.semibold))
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                confirmDelete(model)
+        HStack(spacing: 12) {
+            Button {
+                selectModel(model)
             } label: {
-                Label("Delete", systemImage: "trash")
+                HStack(spacing: 12) {
+                    providerIcon(for: model)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.displayName).font(.body).foregroundStyle(.primary)
+                        Text("\(model.formattedSize)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if lifecycleManager.activeModelID == model.id && lifecycleManager.isModelReady {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
+                    } else if model.id == selectedModelID {
+                        Image(systemName: "checkmark").foregroundStyle(.blue).font(.caption.weight(.semibold))
+                    }
+                }
             }
+            .buttonStyle(.plain)
+            Button(role: .destructive) { confirmDelete(model) } label: {
+                Image(systemName: "trash").font(.caption).foregroundStyle(.red)
+            }
+            .buttonStyle(.borderless)
         }
     }
 
