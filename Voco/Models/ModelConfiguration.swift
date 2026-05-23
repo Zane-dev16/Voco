@@ -56,12 +56,12 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         userPromptTemplate: "{text}"
     )
 
-    /// Gemma / TranslateGemma — Gemma turn format via chat template.
+    /// Gemma / TranslateGemma — Simple user-prompt via chat template.
     static let gemmaInstruct = ModelConfiguration(
-        batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
-        temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
-        systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary, notes, or explanations.",
-        userPromptTemplate: "{text}"
+        batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
+        temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: false,
+        systemPrompt: "",
+        userPromptTemplate: "Translate to {target}: {text}"
     )
 
     /// NLLB-200 — dedicated translation model with language token prefix.
