@@ -3,13 +3,12 @@
 <plist version="1.0"><dict>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleExecutable</key><string>llama</string>
-<key>CFBundleIdentifier</key><string>org.ggml.llama</string>
+<key>CFBundleIdentifier</key><string>com.zanishlabs.llama</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 <key>CFBundleName</key><string>llama</string>
 <key>CFBundlePackageType</key><string>FMWK</string>
 <key>CFBundleShortVersionString</key><string>1.0</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>MinimumOSVersion</key><string>16.4</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
-<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+<key>MinimumOSVersion</key><string>16.4</string>
 </dict></plist>
