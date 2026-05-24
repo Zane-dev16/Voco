@@ -159,7 +159,23 @@ public final class LlamaModel {
 
     /// Apply chat template using the default model template (or custom by name).
     public func applyChatTemplate(to messages: [LlamaChatMessage], addAssistant: Bool? = nil) -> String {
-        let cTemplatePointer = llama_model_chat_template(modelPointer, nil)
+        // Get the model's chat template from GGUF metadata
+        var cTemplatePointer = llama_model_chat_template(modelPointer, nil)
+
+        // If the GGUF lacks a template, check if this is a Gemma-architecture model
+        // and supply the built-in Gemma template string directly
+        if cTemplatePointer == nil {
+            var archBuffer = [CChar](repeating: 0, count: 64)
+            let archLen = llama_model_meta_val_str(modelPointer, "general.architecture", &archBuffer, 64)
+            if archLen > 0 {
+                let arch = String(cString: archBuffer)
+                if arch.hasPrefix("gemma") {
+                    // Pass a template string containing '<start_of_turn>' which
+                    // llama_chat_apply_template detects as Gemma format
+                    cTemplatePointer = UnsafePointer(strdup("<start_of_turn>user\n"))
+                }
+            }
+        }
 
         // Convert Swift messages to C messages
         var cMessages = messages.map { message -> llama_chat_message in

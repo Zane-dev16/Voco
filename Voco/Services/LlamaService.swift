@@ -217,17 +217,17 @@ final class LlamaService {
         target: String,
         config: ModelConfiguration
     ) -> [LlamaChatMessage] {
-        let systemPrompt = config.systemPrompt
-            .replacingOccurrences(of: "{target}", with: target)
         let userPrompt = config.userPromptTemplate
             .replacingOccurrences(of: "{source}", with: source)
             .replacingOccurrences(of: "{target}", with: target)
             .replacingOccurrences(of: "{text}", with: text)
-
-        return [
-            LlamaChatMessage(role: .system, content: systemPrompt),
-            LlamaChatMessage(role: .user, content: userPrompt)
-        ]
+        // Gemma models: single user message only (system role confuses Gemma)
+        if config == .gemmaInstruct {
+            return [LlamaChatMessage(role: .user, content: userPrompt)]
+        }
+        let sys = config.systemPrompt
+            .replacingOccurrences(of: "{target}", with: target)
+        return [LlamaChatMessage(role: .system, content: sys), LlamaChatMessage(role: .user, content: userPrompt)]
     }
 
     private func samplingConfig(from config: ModelConfiguration) -> LlamaSamplingConfig {

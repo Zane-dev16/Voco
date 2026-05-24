@@ -56,7 +56,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         userPromptTemplate: "{text}"
     )
 
-    /// Gemma / TranslateGemma — Simple user-prompt via chat template.
+    /// Gemma / TranslateGemma — chat template path. No system prompt (Gemma merges poorly).
     static let gemmaInstruct = ModelConfiguration(
         batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: false,
