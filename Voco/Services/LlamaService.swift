@@ -78,17 +78,16 @@ final class LlamaService {
 
         let sampling = samplingConfig(from: model.config)
 
-        // HY-MT1.5 and NLLB models use raw prompt format, bypassing chat template
-        if model.config == .hunyuanMT || model.config == .nllbTranslate {
+        switch model.config.promptStrategy {
+        case .raw:
             let resolvedTarget: String
             let resolvedSource: String
             if model.config == .nllbTranslate {
-                // NLLB uses ISO language codes (en, es, fr...)
-                resolvedSource = Language.allCases.first(where: { $0.displayName == sourceLanguage })?.code ?? "en"
-                resolvedTarget = Language.allCases.first(where: { $0.displayName == targetLanguage || $0.hunyuanTargetName == targetLanguage })?.code ?? "es"
+                resolvedSource = Language.find(byCode: sourceLanguage)?.code ?? "en"
+                resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.code ?? "es"
             } else {
                 resolvedSource = sourceLanguage
-                resolvedTarget = Language.allCases.first(where: { $0.displayName == targetLanguage || $0.hunyuanTargetName == targetLanguage })?.hunyuanTargetName ?? targetLanguage
+                resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.hunyuanTargetName ?? targetLanguage
             }
             let rawPrompt = model.config.userPromptTemplate
                 .replacingOccurrences(of: "{source}", with: resolvedSource)
@@ -96,20 +95,14 @@ final class LlamaService {
                 .replacingOccurrences(of: "{target}", with: resolvedTarget)
                 .replacingOccurrences(of: "{target_code}", with: resolvedTarget)
                 .replacingOccurrences(of: "{text}", with: text)
-            let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling)
             var output = ""
-            for try await token in stream { output += token }
+            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling) { output += token }
             return output.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
 
-        let messages = buildMessages(
-            text: text,
-            source: sourceLanguage,
-            target: targetLanguage,
-            config: model.config
-        )
-        let response = try await service.respond(to: messages, samplingConfig: sampling)
-        return Self.stripThinkingTags(from: response)
+        case .chatUserOnly, .chatWithSystem:
+            let messages = buildMessages(text: text, source: sourceLanguage, target: targetLanguage, config: model.config)
+            return Self.stripThinkingTags(from: try await service.respond(to: messages, samplingConfig: sampling))
+        }
     }
 
     /// Translates text with streaming token generation.
@@ -126,10 +119,9 @@ final class LlamaService {
 
         let sampling = samplingConfig(from: model.config)
 
-        // HY-MT1.5: use raw SentencePiece prompt path with streaming
-        if model.config == .hunyuanMT {
+        if model.config.promptStrategy == .raw {
             // Resolve the target language to its model-facing name
-            let resolvedTarget = Language.allCases.first(where: { $0.displayName == targetLanguage || $0.hunyuanTargetName == targetLanguage })?.hunyuanTargetName ?? targetLanguage
+            let resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.hunyuanTargetName ?? targetLanguage
             let rawPrompt = model.config.userPromptTemplate
                 .replacingOccurrences(of: "{source}", with: sourceLanguage)
                 .replacingOccurrences(of: "{target}", with: resolvedTarget)
@@ -221,12 +213,11 @@ final class LlamaService {
             .replacingOccurrences(of: "{source}", with: source)
             .replacingOccurrences(of: "{target}", with: target)
             .replacingOccurrences(of: "{text}", with: text)
-        // Gemma models: single user message only (system role confuses Gemma)
-        if config == .gemmaInstruct {
+        // Gemma-family models: chatUserOnly — no system role
+        if config.promptStrategy == .chatUserOnly {
             return [LlamaChatMessage(role: .user, content: userPrompt)]
         }
-        let sys = config.systemPrompt
-            .replacingOccurrences(of: "{target}", with: target)
+        let sys = config.systemPrompt.replacingOccurrences(of: "{target}", with: target)
         return [LlamaChatMessage(role: .system, content: sys), LlamaChatMessage(role: .user, content: userPrompt)]
     }
 

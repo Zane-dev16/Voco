@@ -10,6 +10,16 @@
 import Foundation
 
 struct ModelConfiguration: Sendable, Hashable, Equatable {
+    enum PromptStrategy: Sendable, Hashable {
+        /// Raw prompt — bypasses chat template. Tokenizer-specific tokens included in template.
+        case raw
+        /// Chat template with system + user messages.
+        case chatWithSystem
+        /// Chat template with user-only message (system role confuses this model family).
+        case chatUserOnly
+    }
+
+    let promptStrategy: PromptStrategy
     let batchSize: Int
     let maxTokenCount: Int
     let threadCount: Int
@@ -26,6 +36,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     /// Small models ~300-500 MB. Chat template path.
     static let compact = ModelConfiguration(
+        promptStrategy: .chatWithSystem,
         batchSize: 512, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",
@@ -34,6 +45,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     /// Tencent Hy-MT1.5 — raw SentencePiece prompt format.
     static let hunyuanMT = ModelConfiguration(
+        promptStrategy: .raw,
         batchSize: 512, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: false,
         systemPrompt: "",
@@ -42,6 +54,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     /// Llama 3.2 Instruct — chat template with translation system prompt.
     static let llamaInstruct = ModelConfiguration(
+        promptStrategy: .chatWithSystem,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary, notes, or explanations.",
@@ -50,6 +63,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     /// Qwen2.5 Instruct — ChatML format via chat template.
     static let qwenInstruct = ModelConfiguration(
+        promptStrategy: .chatWithSystem,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary, notes, or explanations.",
@@ -58,6 +72,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     /// Gemma / TranslateGemma — chat template path. No system prompt (Gemma merges poorly).
     static let gemmaInstruct = ModelConfiguration(
+        promptStrategy: .chatUserOnly,
         batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: false,
         systemPrompt: "",
@@ -67,6 +82,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
     /// NLLB-200 — dedicated translation model with language token prefix.
     /// NLLB requires source language token prefix: __en__ → __es__ etc.
     static let nllbTranslate = ModelConfiguration(
+        promptStrategy: .raw,
         batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
         temperature: 0.1, topP: 0.95, topK: 20, seed: 1234, useGPU: true,
         systemPrompt: "",
@@ -75,6 +91,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     /// Medium-large models ~600 MB-1.5 GB.
     static let standard = ModelConfiguration(
+        promptStrategy: .chatWithSystem,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",
@@ -83,6 +100,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     /// High-quality config for devices with ≥4GB free RAM.
     static let quality = ModelConfiguration(
+        promptStrategy: .chatWithSystem,
         batchSize: 2048, maxTokenCount: 2048, threadCount: 3, threadCountBatch: 3,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",

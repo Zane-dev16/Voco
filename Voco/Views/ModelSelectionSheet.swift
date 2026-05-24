@@ -9,9 +9,9 @@
 import SwiftUI
 
 struct ModelSelectionSheet: View {
-    let lifecycleManager: ModelLifecycleManager
-    let downloadManager: ModelManagerService
     @Binding var selectedModelID: String
+    @Environment(\.lifecycleManager) private var lifecycleManager
+    @Environment(\.downloadManager) private var downloadManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var isActivating = false

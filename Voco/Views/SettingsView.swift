@@ -8,9 +8,9 @@
 import SwiftUI
 
 struct SettingsView: View {
-    let lifecycleManager: ModelLifecycleManager
-    let downloadManager: ModelManagerService
     @Binding var selectedModelID: String
+    @Environment(\.lifecycleManager) private var lifecycleManager
+    @Environment(\.downloadManager) private var downloadManager
 
     @State private var showDeleteConfirmation = false
     @State private var modelToDelete: TranslationModel?
@@ -42,11 +42,7 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.large)
         .sheet(isPresented: $showModelSheet) {
             NavigationStack {
-                ModelSelectionSheet(
-                    lifecycleManager: lifecycleManager,
-                    downloadManager: downloadManager,
-                    selectedModelID: $selectedModelID
-                )
+                ModelSelectionSheet(selectedModelID: $selectedModelID)
             }
         }
         .confirmationDialog(

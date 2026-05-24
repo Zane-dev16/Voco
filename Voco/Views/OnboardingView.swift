@@ -9,8 +9,8 @@ import SwiftUI
 
 struct OnboardingView: View {
     let model: TranslationModel
-    let lifecycleManager: ModelLifecycleManager
-    let downloadManager: ModelManagerService
+    @Environment(\.lifecycleManager) private var lifecycleManager
+    @Environment(\.downloadManager) private var downloadManager
 
     @Environment(\.openURL) private var openURL
 

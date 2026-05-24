@@ -2,7 +2,8 @@
 //  ContentView.swift
 //  Voco
 //
-//  Single-page root. No tabs. Settings accessed via top-right gear.
+//  Single-page root. Settings accessed via top-right gear.
+//  Managers injected via @Environment — no prop drilling.
 //
 
 import SwiftUI
@@ -14,12 +15,10 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            TranslateRoot(
-                lifecycleManager: lifecycleManager,
-                downloadManager: downloadManager,
-                selectedModelID: $selectedModelID
-            )
+            TranslateRoot(selectedModelID: $selectedModelID)
         }
+        .environment(\.lifecycleManager, lifecycleManager)
+        .environment(\.downloadManager, downloadManager)
         .onChange(of: selectedModelID) { _, newID in
             autoActivateModel(newID)
         }
@@ -32,20 +31,16 @@ struct ContentView: View {
         guard let model = TranslationModel.availableModels.first(where: { $0.id == modelID }) else { return }
         guard downloadManager.isModelDownloaded(model) else { return }
         guard lifecycleManager.activeModelID != modelID else { return }
-
-        Task {
-            try? await lifecycleManager.activate(model)
-        }
+        Task { try? await lifecycleManager.activate(model) }
     }
 }
 
 // MARK: - Translate Root
 
 private struct TranslateRoot: View {
-    let lifecycleManager: ModelLifecycleManager
-    let downloadManager: ModelManagerService
     @Binding var selectedModelID: String
-
+    @Environment(\.lifecycleManager) private var lifecycleManager
+    @Environment(\.downloadManager) private var downloadManager
     @State private var showModelSheet = false
     @State private var showSettings = false
 
@@ -56,78 +51,40 @@ private struct TranslateRoot: View {
     var body: some View {
         Group {
             if let model = selectedModel, isModelReady(for: model.id) {
-                TranslationView(
-                    lifecycleManager: lifecycleManager,
-                    downloadManager: downloadManager,
-                    selectedModelID: $selectedModelID
-                )
+                TranslationView(selectedModelID: $selectedModelID)
             } else if let model = selectedModel {
-                OnboardingView(
-                    model: model,
-                    lifecycleManager: lifecycleManager,
-                    downloadManager: downloadManager
-                )
+                OnboardingView(model: model)
             } else {
-                ContentUnavailableView(
-                    "No Models",
-                    systemImage: "square.stack.3d.up",
-                    description: Text("No translation models are available.")
-                )
+                ContentUnavailableView("No Models", systemImage: "square.stack.3d.up",
+                    description: Text("No translation models are available."))
             }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                modelPickerButton
-            }
-
+            ToolbarItem(placement: .topBarLeading) { modelPickerButton }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.primary)
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape").font(.system(size: 18, weight: .medium)).foregroundStyle(.primary)
                 }
             }
         }
         .sheet(isPresented: $showModelSheet) {
-            NavigationStack {
-                ModelSelectionSheet(
-                    lifecycleManager: lifecycleManager,
-                    downloadManager: downloadManager,
-                    selectedModelID: $selectedModelID
-                )
-            }
+            NavigationStack { ModelSelectionSheet(selectedModelID: $selectedModelID) }
         }
         .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                SettingsView(
-                    lifecycleManager: lifecycleManager,
-                    downloadManager: downloadManager,
-                    selectedModelID: $selectedModelID
-                )
-            }
+            NavigationStack { SettingsView(selectedModelID: $selectedModelID) }
         }
     }
 
     private var modelPickerButton: some View {
-        Button {
-            showModelSheet = true
-        } label: {
+        Button { showModelSheet = true } label: {
             HStack(spacing: 6) {
-                Image(systemName: selectedModel?.providerIcon ?? "cpu")
-                    .font(.caption)
-                Text(selectedModel?.displayName ?? "Select Model")
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
+                Image(systemName: selectedModel?.providerIcon ?? "cpu").font(.caption)
+                Text(selectedModel?.displayName ?? "Select Model").font(.caption.weight(.medium)).lineLimit(1)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color(.tertiarySystemFill))
-            .clipShape(Capsule())
-        }
-        .tint(.primary)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Color(.tertiarySystemFill)).clipShape(Capsule())
+        }.tint(.primary)
     }
 
     private func isModelReady(for id: String) -> Bool {

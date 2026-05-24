@@ -11,9 +11,9 @@ import SwiftUI
 import UIKit
 
 struct TranslationView: View {
-    let lifecycleManager: ModelLifecycleManager
-    let downloadManager: ModelManagerService
     @Binding var selectedModelID: String
+    @Environment(\.lifecycleManager) private var lifecycleManager
+    @Environment(\.downloadManager) private var downloadManager
 
     // MARK: - State
 
@@ -627,9 +627,7 @@ private struct ShareSheet: UIViewControllerRepresentable {
 // MARK: - Preview
 
 #Preview {
-    TranslationView(
-        lifecycleManager: ModelLifecycleManager(),
-        downloadManager: ModelManagerService(),
-        selectedModelID: .constant("hy-mt1.5-1.8b-stq")
-    )
+    TranslationView(selectedModelID: .constant("hy-mt1.5-1.8b-stq"))
+        .environment(\.lifecycleManager, ModelLifecycleManager())
+        .environment(\.downloadManager, ModelManagerService())
 }
