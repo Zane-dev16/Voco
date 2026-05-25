@@ -251,6 +251,17 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.vertical, 2)
+
+            NavigationLink {
+                ModelLicensesView()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                    Text("Models & Licenses")
+                }
+            }
         } header: {
             Text("About")
         } footer: {

@@ -9,6 +9,7 @@ struct VocoApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .task { await runFullModelSuite() }
         }
     }
 }
