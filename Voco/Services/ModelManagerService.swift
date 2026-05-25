@@ -13,6 +13,7 @@ import Observation
 final class ModelManagerService {
     private(set) var downloadStates: [String: DownloadState] = [:]
     private var downloadTasks: [String: URLSessionDownloadTask] = [:]
+    private let downloadDelegate = DownloadDelegate()
     private let session: URLSession
 
     private let modelsDirectory: URL = {
@@ -22,7 +23,7 @@ final class ModelManagerService {
 
     init() {
         let config = URLSessionConfiguration.default
-        session = URLSession(configuration: config, delegate: DownloadDelegate.shared, delegateQueue: nil)
+        session = URLSession(configuration: config, delegate: downloadDelegate, delegateQueue: nil)
         ensureModelsDirectoryExists()
         scanExistingModels()
     }
@@ -36,7 +37,7 @@ final class ModelManagerService {
         let modelID = model.id
         let targetURL = modelsDirectory.appendingPathComponent(model.filename)
 
-        DownloadDelegate.shared.register(
+        downloadDelegate.register(
             for: modelID, task: task, destination: targetURL,
             onProgress: { [weak self] progress in
                 Task { @MainActor in
@@ -64,11 +65,56 @@ final class ModelManagerService {
         task.resume()
     }
 
+    /// Async wrapper — returns local URL on success. Uses continuation to avoid polling.
+    func downloadAsync(_ model: TranslationModel) async throws -> URL {
+        guard let targetURL = localURL(for: model) else {
+            // Need to download — use continuation
+            return try await withCheckedThrowingContinuation { continuation in
+                guard downloadTasks[model.id] == nil else {
+                    continuation.resume(throwing: LlamaError.noModelLoaded)
+                    return
+                }
+                downloadStates[model.id] = .downloading(progress: 0)
+
+                let request = URLRequest(url: model.sourceURL)
+                let task = session.downloadTask(with: request)
+                let modelID = model.id
+                let destURL = modelsDirectory.appendingPathComponent(model.filename)
+
+                downloadDelegate.register(
+                    for: modelID, task: task, destination: destURL,
+                    onProgress: { [weak self] progress in
+                        Task { @MainActor in
+                            self?.downloadStates[modelID] = .downloading(progress: progress)
+                        }
+                    },
+                    onComplete: { [weak self] result in
+                        Task { @MainActor in
+                            switch result {
+                            case .success(let url):
+                                self?.downloadStates[modelID] = .downloaded
+                                continuation.resume(returning: url)
+                            case .failure(let err):
+                                self?.downloadStates[modelID] = .failed(err.localizedDescription)
+                                continuation.resume(throwing: err)
+                            }
+                            self?.downloadTasks.removeValue(forKey: modelID)
+                        }
+                    }
+                )
+
+                downloadTasks[modelID] = task
+                task.resume()
+            }
+        }
+        return targetURL
+    }
+
     func cancelDownload(for modelID: String) {
         let task = downloadTasks.removeValue(forKey: modelID)
         downloadStates[modelID] = .notDownloaded
         // Mark handler as cancelled so didCompleteWithError ignores the error callback
-        DownloadDelegate.shared.cancel(task: task)
+        downloadDelegate.cancel(task: task)
     }
 
     func deleteModel(_ model: TranslationModel) throws {
@@ -119,7 +165,6 @@ final class ModelManagerService {
 }
 
 private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLSessionTaskDelegate {
-    static let shared = DownloadDelegate()
 
     private var handlers: [Int: DownloadHandler] = [:]
 
