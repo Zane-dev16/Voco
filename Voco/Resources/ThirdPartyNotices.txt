@@ -1,0 +1,45 @@
+Third-Party Notices
+===================
+
+Voco uses open-source software and redistributes quantized model weights under
+their respective licenses.
+
+---
+
+llama.cpp
+---------
+MIT License
+Copyright (c) 2023-2024 The llama.cpp team
+https://github.com/ggml-org/llama.cpp
+
+swift-llama-cpp
+---------------
+MIT License
+https://github.com/pgorzelany/swift-llama-cpp
+
+---
+
+Model Weights
+-------------
+
+Tencent Hy-MT1.5 / Hy-MT2
+  Tencent Hunyuan Model License (custom)
+  https://huggingface.co/tencent/Hy-MT1.5-1.8B
+
+Meta Llama 3.2 1B / 3B
+  Llama 3.2 Community License
+  https://www.llama.com/llama3_2/license/
+  Built with Llama. © Meta Platforms, Inc.
+
+Qwen3.5 0.8B / 2B / 4B
+  Apache License 2.0
+  https://www.apache.org/licenses/LICENSE-2.0
+
+Gemma 4 E2B / E4B / TranslateGemma 4B
+  Gemma License (custom)
+  https://ai.google.dev/gemma/terms
+
+---
+
+All model weights are downloaded at runtime from HuggingFace and are not
+bundled with the application binary.

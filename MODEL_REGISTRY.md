@@ -1,46 +1,33 @@
 # Voco Model Registry
 
-The model registry is a single source of truth for all downloadable translation models. Adding a model requires editing **only one file**: `Voco/Models/TranslationModel.swift`.
+The model registry is the single source of truth for all downloadable translation
+models. Adding a model requires editing **only one file**: `Voco/Models/TranslationModel.swift`.
 
-## Quick Start: Adding a Model
+## Current Models (11 entries, 4 providers)
 
-1. Find a GGUF model on HuggingFace (e.g. `unsloth/Qwen3-0.6B-GGUF`).
-2. Pick a quantization that fits your target device:
-   - `Q2_K` / `Q3_K_M` — ~300-500 MB, works on simulator
-   - `Q4_K_M` — ~400-600 MB, balanced
-   - `Q5_K_M` / `Q6_K` — ~700 MB+, physical device only
-3. Copy the direct download URL:
-   ```
-   https://huggingface.co/<repo>/resolve/main/<filename>.gguf
-   ```
-4. Append a new `TranslationModel(...)` entry to the `availableModels` array in `TranslationModel.swift`.
-5. Choose a `config` preset:
-   - `.compact`  — batchSize 512, for models ≤400 MB
-   - `.standard` — batchSize 256, for models ~600-800 MB
-   - `.quality`  — batchSize 2048, for physical devices with ample RAM
-6. Verify the URL with a HEAD request before committing:
-   ```bash
-   curl -I -L "<url>"
-   ```
-   Must return HTTP 200. If it returns 401/404, the model is gated or deleted — pick a different one.
+| # | ID | Provider | Model | Quantization | Size | Capability |
+|---|-----|----------|-------|-------------|------|------------|
+| 1 | `hy-mt1.5-1.8b-stq` | Tencent | Hy-MT1.5 1.8B | 1.25-bit STQ1_0 | 440 MB | Simulator + Device |
+| 2 | `hy-mt2-1.8b-stq` | Tencent | Hy-MT2 1.8B | 1.25-bit STQ1_0 | 435 MB | Simulator + Device |
+| 3 | `hy-mt1.5-1.8b-q4km` | Tencent | Hy-MT1.5 1.8B HQ | Q4_K_M | 1.08 GB | Simulator + Device |
+| 4 | `llama-3.2-1b-q8` | Meta | Llama 3.2 1B | Q8_0 | 1.32 GB | Device Recommended |
+| 5 | `llama-3.2-3b-iq3m` | Meta | Llama 3.2 3B | IQ3_M | 1.53 GB | Device Recommended |
+| 6 | `qwen3.5-0.8b-q8` | Qwen | Qwen3.5 0.8B | Q8_0 | 795 MB | Simulator + Device |
+| 7 | `qwen3.5-2b-q4km` | Qwen | Qwen3.5 2B | Q4_K_M | 1.30 GB | Device Recommended |
+| 8 | `qwen3.5-4b-q4km` | Qwen | Qwen3.5 4B | Q4_K_M | 2.60 GB | Device Recommended |
+| 9 | `gemma-4-e2b-q4km` | Google | Gemma 4 E2B | Q4_K_M | 3.18 GB | Device Recommended |
+| 10 | `gemma-4-e4b-q4km` | Google | Gemma 4 E4B | Q4_K_M | 4.99 GB | Device Recommended |
+| 11 | `translategemma-4b-q2k` | Google | TranslateGemma 4B | Q2_K | 1.69 GB | Device Recommended |
 
-## Example Entry
+## Adding a Model
 
-```swift
-TranslationModel(
-    id: "my-model-id",               // unique kebab-case ID
-    displayName: "My Model 1B",      // human-readable name shown in UI
-    description: "Short description",// shown in the model picker
-    provider: "MyOrg",               // company/organization name
-    sourceURL: URL(string: "https://huggingface.co/...")!,
-    fileSizeBytes: 400_000_000,      // accurate byte count from HF
-    supportedLanguages: [.english, .spanish, .french],
-    hfRepo: "org/repo-GGUF",         // HuggingFace repo path
-    quantization: "Q4_K_M",          // quantization label shown in UI
-    config: .compact,                // or .standard / .quality
-    capability: .simulatorAndDevice  // or .deviceRecommended
-)
-```
+1. Find a GGUF model on HuggingFace.
+2. Pick a quantization that fits your target device.
+3. Append a new `TranslationModel(...)` entry to the `availableModels` array
+   in `TranslationModel.swift`.
+4. Choose a `config` preset: `.compact`, `.standard`, `.quality`, `.hunyuanMT`,
+   `.llamaInstruct`, `.qwenInstruct`, `.gemmaInstruct`, or `.nllbTranslate`.
+5. Verify the URL with a HEAD request before committing.
 
 ## Architecture
 
@@ -50,18 +37,8 @@ TranslationModel(
 | `ModelConfiguration.swift` | Reusable config presets (batch, tokens, prompts) |
 | `LlamaService.swift` | Reads `model.config` at runtime — zero hardcoded values |
 
-`LlamaService` builds chat messages using `config.systemPrompt` and `config.userPromptTemplate`, and sampling using `config.temperature` / `config.topP` / `config.topK`. No service code changes are needed when adding a model.
-
-## Current Models
-
-| Model | Provider | Size | Quant | Config | Capability |
-|-------|----------|------|-------|--------|------------|
-| Qwen3 0.6B | Alibaba | ~397 MB | Q4_K_M | `.compact` | Simulator + Device |
-| Hunyuan 0.5B | Tencent | ~308 MB | Q3_K_M | `.compact` | Simulator + Device |
-| Gemma 3 1B | Google | ~690 MB | Q2_K | `.standard` | Device recommended |
-| Hy-MT1.5 1.8B | Tencent | ~573 MB | 2bit | `.compact` | Simulator + Device |
-
 ## Notes
 
-- **Never bundle GGUF files in Git.** They are downloaded at runtime into the app sandbox.
-- If a model URL breaks (404/401), replace the entry rather than adding a duplicate. URLs for un-gated models are generally stable; gated models (e.g. `google/gemma-*` direct) may return 401 — use unsloth or bartowski mirrors instead.
+- **Never bundle GGUF files in Git.** They are downloaded at runtime.
+- If a model URL breaks, replace the entry rather than adding a duplicate.
+- Gated models (Meta Llama) require HF token authentication.
