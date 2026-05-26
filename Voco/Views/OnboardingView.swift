@@ -43,7 +43,7 @@ struct OnboardingView: View {
                     .font(.title2.bold())
                     .multilineTextAlignment(.center)
 
-                Text("Download \(model.provider)'s translation engine and translate anywhere, completely offline and private.")
+                Text("Download \(model.provider)'s model and translate anywhere, completely offline and private.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
