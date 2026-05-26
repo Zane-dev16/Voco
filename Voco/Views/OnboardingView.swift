@@ -157,18 +157,7 @@ struct OnboardingView: View {
         Task {
             do {
                 if !downloadManager.isModelDownloaded(model) {
-                    downloadManager.download(model)
-
-                    // Wait for download to finish (or fail)
-                    var tries = 0
-                    while !downloadManager.isModelDownloaded(model) && tries < 600 {
-                        try? await Task.sleep(nanoseconds: 1_000_000_000)
-                        if case .failed = downloadManager.downloadStates[model.id] {
-                            isActivating = false
-                            return
-                        }
-                        tries += 1
-                    }
+                    _ = try await downloadManager.downloadAsync(model)
                 }
 
                 try await lifecycleManager.activate(model)

@@ -33,6 +33,19 @@ final class ModelLifecycleManager {
         guard model.id != activeModelID else { return }
 
         if activeModelID != nil { await deactivate() }
+
+        // Warn if model may exceed available RAM.
+        // A 6 GB device has ~2-3 GB usable after iOS overhead.
+        // Models > 3 GB risk jetsam on entry-level devices.
+        if model.fileSizeBytes > 3_000_000_000 {
+            let available = availableMemory()
+            // Model needs at least fileSize + 1.5 GB working-set headroom
+            let required = UInt64(model.fileSizeBytes) + 1_500_000_000
+            if available < required {
+                VocoLog.models.warning("[ModelLifecycle] Low memory: model \(model.displayName) requires ~\(ByteCountFormatter.string(fromByteCount: Int64(required), countStyle: .file)), only \(ByteCountFormatter.string(fromByteCount: Int64(available), countStyle: .file)) available. Jetsam risk.")
+            }
+        }
+
         lifecycleState = .loading(model.id)
 
         let url = try await resolveModelURL(model)
@@ -40,6 +53,29 @@ final class ModelLifecycleManager {
 
         activeModelID = model.id
         lifecycleState = .ready(model.id)
+    }
+
+    /// Estimated available memory in bytes. Uses task_vm_info on device;
+    /// falls back to physicalMemory on simulator.
+    nonisolated private func availableMemory() -> UInt64 {
+#if os(iOS)
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        if result == KERN_SUCCESS {
+            // Free + inactive + purgeable memory
+            let available = info.free_count + info.inactive_count + info.purgeable_count
+            return UInt64(available) * UInt64(vm_page_size)
+        }
+        // Fallback: assume 50% of physical memory is available
+        return ProcessInfo.processInfo.physicalMemory / 2
+#else
+        return ProcessInfo.processInfo.physicalMemory / 2
+#endif
     }
 
     // MARK: - Private
