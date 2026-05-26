@@ -55,23 +55,23 @@ final class ModelLifecycleManager {
         lifecycleState = .ready(model.id)
     }
 
-    /// Estimated available memory in bytes. Uses task_vm_info on device;
-    /// falls back to physicalMemory on simulator.
+    /// Estimated available memory in bytes. Uses host_statistics64 for
+    /// free + inactive + purgeable pages; falls back to physicalMemory.
     nonisolated private func availableMemory() -> UInt64 {
 #if os(iOS)
-        var info = task_vm_info_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+        var pageSize: vm_size_t = 0
+        host_page_size(mach_host_self(), &pageSize)
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
             }
         }
         if result == KERN_SUCCESS {
-            // Free + inactive + purgeable memory
-            let available = info.free_count + info.inactive_count + info.purgeable_count
-            return UInt64(available) * UInt64(vm_page_size)
+            let available = UInt64(stats.free_count + stats.inactive_count + stats.purgeable_count)
+            return available * UInt64(pageSize)
         }
-        // Fallback: assume 50% of physical memory is available
         return ProcessInfo.processInfo.physicalMemory / 2
 #else
         return ProcessInfo.processInfo.physicalMemory / 2

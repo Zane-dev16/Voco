@@ -8,6 +8,7 @@
 import Foundation
 import Observation
 import OSLog
+import CryptoKit
 
 @Observable
 @MainActor
@@ -40,6 +41,7 @@ final class ModelManagerService {
 
         downloadDelegate.register(
             for: modelID, task: task, destination: targetURL,
+            sha256: model.sha256,
             onProgress: { [weak self] progress in
                 Task { @MainActor in
                     self?.downloadStates[modelID] = .downloading(progress: progress)
@@ -84,6 +86,7 @@ final class ModelManagerService {
 
                 downloadDelegate.register(
                     for: modelID, task: task, destination: destURL,
+                    sha256: model.sha256,
                     onProgress: { [weak self] progress in
                         Task { @MainActor in
                             self?.downloadStates[modelID] = .downloading(progress: progress)
@@ -171,6 +174,7 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
 
     private struct DownloadHandler {
         let destination: URL
+        let expectedSHA256: String      // expected hash; empty = skip verification
         var copiedLocation: URL?
         var copyError: Error?
         var isCancelled = false
@@ -178,8 +182,8 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
         let onComplete: (Result<URL, Error>) -> Void
     }
 
-    func register(for modelID: String, task: URLSessionDownloadTask, destination: URL, onProgress: @escaping (Double) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
-        handlers[task.taskIdentifier] = DownloadHandler(destination: destination, onProgress: onProgress, onComplete: onComplete)
+    func register(for modelID: String, task: URLSessionDownloadTask, destination: URL, sha256: String, onProgress: @escaping (Double) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
+        handlers[task.taskIdentifier] = DownloadHandler(destination: destination, expectedSHA256: sha256, onProgress: onProgress, onComplete: onComplete)
     }
 
     func cancel(task: URLSessionDownloadTask?) {
@@ -231,6 +235,18 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
         } else if let copyError = handler.copyError {
             handler.onComplete(.failure(copyError))
         } else if let copiedLocation = handler.copiedLocation {
+            // Verify SHA-256 checksum if one is expected
+            if !handler.expectedSHA256.isEmpty {
+                if let data = try? Data(contentsOf: copiedLocation) {
+                    let actualHash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+                    if actualHash != handler.expectedSHA256 {
+                        let err = NSError(domain: "Voco", code: -2,
+                            userInfo: [NSLocalizedDescriptionKey: "Checksum mismatch — downloaded file may be corrupted. Expected \(handler.expectedSHA256.prefix(16))…, got \(actualHash.prefix(16))…"])
+                        handler.onComplete(.failure(err))
+                        return
+                    }
+                }
+            }
             handler.onComplete(.success(copiedLocation))
         }
     }
