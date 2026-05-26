@@ -159,6 +159,8 @@ struct ModelCatalogView: View {
                     }
                 }
             }
+        } else {
+            dismiss()
         }
     }
 
@@ -227,7 +229,7 @@ private struct ProviderSection: View {
             ForEach(models) { model in
                 ModelCard(
                     model: model,
-                    isSelected: model.id == selectedModelID,
+                    isSelected: model.id == selectedModelID && downloadManager.isModelDownloaded(model),
                     isActive: lifecycleManager.activeModelID == model.id && lifecycleManager.isModelReady,
                     isDownloaded: downloadManager.isModelDownloaded(model),
                     downloadState: downloadManager.downloadStates[model.id] ?? .notDownloaded,
