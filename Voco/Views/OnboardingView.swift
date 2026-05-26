@@ -122,8 +122,8 @@ struct OnboardingView: View {
         if showSuccess { return "Engine Ready" }
         if isDownloading { return "Downloading... \(Int(downloadProgress * 100))%" }
         if isActivating { return "Activating Neural Engine..." }
-        if downloadManager.isModelDownloaded(model) { return "Activate Offline Engine" }
-        return "Download Offline Engine (\(model.formattedSize))"
+        if downloadManager.isModelDownloaded(model) { return "Activate" }
+        return "Download · \(model.formattedSize)"
     }
 
     private var buttonColor: Color {
