@@ -67,8 +67,6 @@ struct SettingsView: View {
         Section {
             if let model = activeModel {
                 HStack(spacing: 12) {
-                    providerIcon(for: model)
-
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.displayName)
                             .font(.body)
@@ -144,7 +142,6 @@ struct SettingsView: View {
                 selectModel(model)
             } label: {
                 HStack(spacing: 12) {
-                    providerIcon(for: model)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.displayName).font(.body).foregroundStyle(.primary)
                         Text("\(model.formattedSize)").font(.caption).foregroundStyle(.secondary)
@@ -294,15 +291,6 @@ struct SettingsView: View {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
         return "\(version) (\(build))"
-    }
-
-    private func providerIcon(for model: TranslationModel) -> some View {
-        Image(systemName: model.providerIcon)
-            .font(.system(size: 16))
-            .foregroundStyle(model.providerColor)
-            .frame(width: 36, height: 36)
-            .background(model.providerColor.opacity(0.12))
-            .clipShape(Circle())
     }
 
     // MARK: - Actions

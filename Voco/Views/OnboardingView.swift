@@ -39,16 +39,6 @@ struct OnboardingView: View {
 
             // Hero
             VStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(model.providerColor.opacity(0.12))
-                        .frame(width: 120, height: 120)
-                    Image(systemName: model.providerIcon)
-                        .font(.system(size: 52))
-                        .foregroundStyle(model.providerColor)
-                        .symbolEffect(.bounce, value: showSuccess)
-                }
-
                 Text(model.displayName)
                     .font(.title2.bold())
                     .multilineTextAlignment(.center)

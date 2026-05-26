@@ -43,11 +43,6 @@ struct ModelLicensesView: View {
 
     private func modelRow(_ model: TranslationModel) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: providerIcon(for: model.provider))
-                .font(.title3)
-                .foregroundStyle(.blue)
-                .frame(width: 28)
-
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(model.displayName)
@@ -149,15 +144,6 @@ struct ModelLicensesView: View {
         }
     }
 
-    private func providerIcon(for provider: String) -> String {
-        switch provider {
-        case "Tencent": return "building.2"
-        case "Meta":    return "flame"
-        case "Qwen":    return "sparkles"
-        case "Google":  return "brain.head.profile"
-        default:        return "questionmark.circle"
-        }
-    }
 }
 
 #Preview {

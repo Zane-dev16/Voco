@@ -79,7 +79,6 @@ private struct TranslateRoot: View {
     private var modelPickerButton: some View {
         Button { showModelSheet = true } label: {
             HStack(spacing: 6) {
-                Image(systemName: selectedModel?.providerIcon ?? "cpu").font(.caption)
                 Text(selectedModel?.displayName ?? "Select Model").font(.caption.weight(.medium)).lineLimit(1)
             }
             .padding(.horizontal, 10).padding(.vertical, 5)

@@ -19,16 +19,6 @@ extension TranslationModel {
         }
     }
 
-    var providerIcon: String {
-        switch provider {
-        case "Tencent": return "bubble.left.fill"
-        case "Qwen": return "sparkles"
-        case "Meta": return "cube.fill"
-        case "Google": return "globe"
-        default: return "cpu"
-        }
-    }
-
     var speedRating: String {
         switch quantization {
         case "1.25-bit STQ1_0", "Q8_0": return "Fast"

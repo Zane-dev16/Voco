@@ -216,8 +216,6 @@ private struct ProviderSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: models.first?.providerIcon ?? "cpu")
-                    .foregroundStyle(providerColor)
                 Text(provider)
                     .font(.headline)
                 Spacer()
@@ -261,15 +259,6 @@ private struct ModelCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(model.providerColor.opacity(0.12))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: model.providerIcon)
-                        .font(.system(size: 20))
-                        .foregroundStyle(model.providerColor)
-                }
-
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(model.displayName)
