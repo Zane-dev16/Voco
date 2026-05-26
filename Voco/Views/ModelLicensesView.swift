@@ -56,7 +56,7 @@ struct ModelLicensesView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "flame.fill")
                                 .font(.caption2)
-                            Text("Built with Llama")
+                            Text(model.attributionText ?? "Built with Meta Llama")
                                 .font(.caption2.weight(.medium))
                         }
                         .foregroundStyle(.orange)

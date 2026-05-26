@@ -126,7 +126,7 @@ extension TranslationModel {
             licenseURL: "https://www.llama.com/llama3_2/license/",
             conversionSummary: "Converted to GGUF and quantised to Q8_0 by Zanish Labs for on-device use.",
             runtimeNotes: nil,
-            attributionText: "Built with Llama",
+            attributionText: "Built with Meta Llama 3.2",
             noticeText: "Llama 3.2 Community License. © Meta Platforms, Inc. See https://www.llama.com/llama3_2/license/",
             requiresBuiltWithLlamaAttribution: true
         ),
@@ -146,7 +146,7 @@ extension TranslationModel {
             licenseURL: "https://www.llama.com/llama3_2/license/",
             conversionSummary: "Converted to GGUF and quantised to IQ3_M by Zanish Labs for on-device use.",
             runtimeNotes: nil,
-            attributionText: "Built with Llama",
+            attributionText: "Built with Meta Llama 3.2",
             noticeText: "Llama 3.2 Community License. © Meta Platforms, Inc. See https://www.llama.com/llama3_2/license/",
             requiresBuiltWithLlamaAttribution: true
         ),
