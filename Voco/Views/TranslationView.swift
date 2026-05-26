@@ -497,7 +497,7 @@ struct TranslationView: View {
                     self.isRecording = true
                 }
             } catch {
-                print("[TranslationView] Speech error: \(error)")
+VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
                 isRecording = false
             }
         }

@@ -149,7 +149,7 @@ final class ModelManagerService {
         do {
             try fm.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         } catch {
-            print("Failed to create models directory: \(error)")
+VocoLog.models.error("Failed to create models directory: \\(error)")
         }
     }
 

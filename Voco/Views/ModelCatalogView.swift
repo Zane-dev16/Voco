@@ -122,7 +122,7 @@ struct ModelCatalogView: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(
                             LinearGradient(
-                                colors: [.indigo, .purple],
+                                colors: [.blue, .blue.opacity(0.6)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -168,7 +168,7 @@ struct ModelCatalogView: View {
         do {
             try downloadManager.deleteModel(model)
         } catch {
-            print("[ModelCatalog] Delete error: \(error)")
+VocoLog.models.error("[ModelCatalog] Delete error: \\(error)")
         }
     }
 
@@ -278,7 +278,7 @@ private struct ModelCard: View {
                             StatusDot(color: .green)
                                 .accessibilityLabel("Active")
                         } else if isSelected {
-                            StatusDot(color: .indigo)
+                            StatusDot(color: .blue)
                                 .accessibilityLabel("Selected")
                         }
                     }
@@ -301,7 +301,7 @@ private struct ModelCard: View {
 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(.blue)
                         .font(.title3)
                         .symbolEffect(.bounce, options: .nonRepeating, value: isSelected)
                 }
@@ -319,7 +319,7 @@ private struct ModelCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(isSelected ? Color.indigo.opacity(0.4) : Color.clear, lineWidth: 1.5)
+                .stroke(isSelected ? Color.blue.opacity(0.4) : Color.clear, lineWidth: 1.5)
         )
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
@@ -333,7 +333,7 @@ private struct ModelCard: View {
     @ViewBuilder
     private var cardBackground: some View {
         if isSelected {
-            Color.indigo.opacity(0.04)
+            Color.blue.opacity(0.04)
         } else {
             Color(.secondarySystemGroupedBackground)
         }
@@ -396,7 +396,7 @@ private struct ModelCard: View {
                             .font(.subheadline.weight(.medium))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(.blue)
                     .frame(maxWidth: .infinity)
                 }
 

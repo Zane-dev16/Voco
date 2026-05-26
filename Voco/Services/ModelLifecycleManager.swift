@@ -75,7 +75,7 @@ final class ModelLifecycleManager {
     // MARK: - Background / lifecycle handling
 
     func handleDidEnterBackground() {
-        print("[ModelLifecycle] App backgrounded — keeping model resident")
+        VocoLog.models.info("[ModelLifecycle] App backgrounded — keeping model resident")
     }
 
     func handleWillEnterForeground() async {

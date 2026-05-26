@@ -329,7 +329,7 @@ struct SettingsView: View {
         do {
             try downloadManager.deleteModel(model)
         } catch {
-            print("[Settings] Delete error: \(error)")
+VocoLog.models.error("[Settings] Delete error: \\(error)")
         }
     }
 }

@@ -49,8 +49,7 @@ final class LlamaService {
 
         inferenceService = SwiftLlama.LlamaService(modelUrl: url, config: llamaConfig)
         currentModel = model
-        print("[LlamaService] Loaded model '\(model.displayName)' — threads=\(cfg.threadCount)/\(cfg.threadCountBatch)")
-        NSLog("[LlamaService] Loaded model '\(model.displayName)' — threads=\(cfg.threadCount)/\(cfg.threadCountBatch)")
+        VocoLog.translation.info("[LlamaService] Loaded model '\\(model.displayName)' — threads=\\(cfg.threadCount)/\\(cfg.threadCountBatch)")
     }
 
     /// Releases the currently loaded model to free memory.

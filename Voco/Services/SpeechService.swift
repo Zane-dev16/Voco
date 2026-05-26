@@ -183,7 +183,7 @@ final class SpeechService {
             try AVAudioSession.sharedInstance().setActive(false)
         } catch {
             // Log but don't throw — recording is stopping regardless.
-            print("[SpeechService] Failed to deactivate audio session: \(error)")
+VocoLog.speech.error("[SpeechService] Failed to deactivate audio session: \\(error)")
         }
     }
 
