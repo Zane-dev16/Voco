@@ -69,7 +69,7 @@ private struct TranslateRoot: View {
             }
         }
         .sheet(isPresented: $showModelSheet) {
-            NavigationStack { ModelSelectionSheet(selectedModelID: $selectedModelID) }
+            NavigationStack { ModelCatalogView(selectedModelID: $selectedModelID) }
         }
         .sheet(isPresented: $showSettings) {
             NavigationStack { SettingsView(selectedModelID: $selectedModelID) }

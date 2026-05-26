@@ -42,7 +42,7 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.large)
         .sheet(isPresented: $showModelSheet) {
             NavigationStack {
-                ModelSelectionSheet(selectedModelID: $selectedModelID)
+                ModelCatalogView(selectedModelID: $selectedModelID)
             }
         }
         .confirmationDialog(

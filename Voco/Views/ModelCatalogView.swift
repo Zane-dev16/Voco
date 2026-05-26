@@ -3,16 +3,17 @@
 //  Voco
 //
 //  Rich model browser with provider-grouped cards, download management,
-//  and one-tap model activation. The central hub for managing Voco's
-//  multi-model offline translation engine.
+//  delete, and one-tap activation. The central hub for Voco's offline
+//  translation engine. Replaces ModelSelectionSheet.
 //
 
 import SwiftUI
 
 struct ModelCatalogView: View {
-    let lifecycleManager: ModelLifecycleManager
-    let downloadManager: ModelManagerService
     @Binding var selectedModelID: String
+    @Environment(\.lifecycleManager) private var lifecycleManager
+    @Environment(\.downloadManager) private var downloadManager
+    @Environment(\.dismiss) private var dismiss
 
     @State private var showDeleteConfirmation = false
     @State private var modelToDelete: TranslationModel?
@@ -28,60 +29,58 @@ struct ModelCatalogView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header summary
-                    catalogHeader
-                        .padding(.horizontal, 16)
+        ScrollView {
+            VStack(spacing: 20) {
+                catalogHeader
+                    .padding(.horizontal, 16)
 
-                    // Provider groups
-                    ForEach(providerGroups, id: \.provider) { group in
-                        ProviderSection(
-                            provider: group.provider,
-                            models: group.models,
-                            selectedModelID: selectedModelID,
-                            lifecycleManager: lifecycleManager,
-                            downloadManager: downloadManager,
-                            onSelect: { model in
-                                selectModel(model)
-                            },
-                            onDelete: { model in
-                                modelToDelete = model
-                                showDeleteConfirmation = true
-                            }
-                        )
-                        .padding(.horizontal, 16)
-                    }
-                }
-                .padding(.vertical, 16)
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Model Library")
-            .navigationBarTitleDisplayMode(.large)
-            .confirmationDialog(
-                "Delete Model?",
-                isPresented: $showDeleteConfirmation,
-                titleVisibility: .visible,
-                presenting: modelToDelete
-            ) { model in
-                Button("Delete \(model.formattedSize)", role: .destructive) {
-                    performDelete(model)
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: { model in
-                Text("This will remove \(model.displayName) from your device. You can re-download it anytime.")
-            }
-            .overlay {
-                if showActivateSuccess, let name = lastActivatedModel {
-                    ToastView(message: "\(name) is ready", systemImage: "checkmark.circle.fill")
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation { showActivateSuccess = false }
-                            }
+                ForEach(providerGroups, id: \.provider) { group in
+                    ProviderSection(
+                        provider: group.provider,
+                        models: group.models,
+                        selectedModelID: selectedModelID,
+                        onSelect: { model in selectModel(model) },
+                        onDelete: { model in
+                            modelToDelete = model
+                            showDeleteConfirmation = true
                         }
+                    )
+                    .padding(.horizontal, 16)
                 }
+            }
+            .padding(.vertical, 16)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Model Library")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { dismiss() }
+                    .fontWeight(.semibold)
+            }
+        }
+        .confirmationDialog(
+            "Delete Model?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible,
+            presenting: modelToDelete
+        ) { model in
+            Button("Delete \(model.formattedSize)", role: .destructive) {
+                performDelete(model)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { model in
+            Text("This will remove \(model.displayName) from your device. You can re-download it anytime.")
+        }
+        .overlay {
+            if showActivateSuccess, let name = lastActivatedModel {
+                ToastView(message: "\(name) is ready", systemImage: "checkmark.circle.fill")
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation { showActivateSuccess = false }
+                        }
+                    }
             }
         }
     }
@@ -113,7 +112,6 @@ struct ModelCatalogView: View {
                 .clipShape(Capsule())
             }
 
-            // Storage bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 4)
@@ -145,13 +143,11 @@ struct ModelCatalogView: View {
     private func selectModel(_ model: TranslationModel) {
         guard model.id != selectedModelID else { return }
 
-        // Deactivate current if needed
         if lifecycleManager.activeModelID != nil {
             Task { await lifecycleManager.deactivate() }
         }
         selectedModelID = model.id
 
-        // Auto-activate if downloaded
         if downloadManager.isModelDownloaded(model) {
             Task {
                 try? await lifecycleManager.activate(model)
@@ -195,7 +191,6 @@ struct ModelCatalogView: View {
     }
 
     private var storageRatio: CGFloat {
-        // Approximate: assume 8 GB free as baseline for visual bar
         let baseline: Int64 = 8_000_000_000
         return min(CGFloat(downloadManager.totalDiskUsage()) / CGFloat(baseline), 1.0)
     }
@@ -207,10 +202,11 @@ private struct ProviderSection: View {
     let provider: String
     let models: [TranslationModel]
     let selectedModelID: String
-    let lifecycleManager: ModelLifecycleManager
-    let downloadManager: ModelManagerService
     let onSelect: (TranslationModel) -> Void
     let onDelete: (TranslationModel) -> Void
+
+    @Environment(\.lifecycleManager) private var lifecycleManager
+    @Environment(\.downloadManager) private var downloadManager
 
     var providerColor: Color {
         models.first?.providerColor ?? .gray
@@ -218,7 +214,6 @@ private struct ProviderSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Section header
             HStack(spacing: 8) {
                 Image(systemName: models.first?.providerIcon ?? "cpu")
                     .foregroundStyle(providerColor)
@@ -230,7 +225,6 @@ private struct ProviderSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Model cards
             ForEach(models) { model in
                 ModelCard(
                     model: model,
@@ -265,9 +259,7 @@ private struct ModelCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Main card content
             HStack(spacing: 12) {
-                // Provider icon
                 ZStack {
                     Circle()
                         .fill(model.providerColor.opacity(0.12))
@@ -277,7 +269,6 @@ private struct ModelCard: View {
                         .foregroundStyle(model.providerColor)
                 }
 
-                // Info
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(model.displayName)
@@ -297,7 +288,6 @@ private struct ModelCard: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
-                    // Badges
                     HStack(spacing: 6) {
                         Badge(text: model.quantization, color: model.providerColor)
                         Badge(text: model.formattedSize, color: .secondary)
@@ -309,7 +299,6 @@ private struct ModelCard: View {
 
                 Spacer()
 
-                // Selection indicator
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.indigo)
@@ -320,7 +309,6 @@ private struct ModelCard: View {
             .padding(14)
             .background(cardBackground)
 
-            // Bottom action bar
             HStack(spacing: 0) {
                 actionBarContent
             }
@@ -498,9 +486,9 @@ private struct ToastView: View {
 // MARK: - Preview
 
 #Preview {
-    ModelCatalogView(
-        lifecycleManager: ModelLifecycleManager(),
-        downloadManager: ModelManagerService(),
-        selectedModelID: .constant("hy-mt1.5-1.8b-stq")
-    )
+    NavigationStack {
+        ModelCatalogView(selectedModelID: .constant("hy-mt1.5-1.8b-stq"))
+    }
+    .environment(\.lifecycleManager, ModelLifecycleManager())
+    .environment(\.downloadManager, ModelManagerService())
 }
