@@ -71,9 +71,10 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
     )
 
     /// Gemma / TranslateGemma — chat template path. No system prompt (Gemma merges poorly).
+    /// Uses higher token count to accommodate possible reasoning/think tokens before translation.
     static let gemmaInstruct = ModelConfiguration(
         promptStrategy: .chatUserOnly,
-        batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
+        batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: false,
         systemPrompt: "",
         userPromptTemplate: "Translate to {target}: {text}"
