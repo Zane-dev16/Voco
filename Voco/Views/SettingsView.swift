@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct SettingsView: View {
     @Binding var selectedModelID: String

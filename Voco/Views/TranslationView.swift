@@ -9,6 +9,7 @@
 
 import SwiftUI
 import UIKit
+import OSLog
 
 struct TranslationView: View {
     @Binding var selectedModelID: String

@@ -7,6 +7,7 @@
 
 import AVFoundation
 import Speech
+import OSLog
 
 // MARK: - SpeechRecognitionError
 

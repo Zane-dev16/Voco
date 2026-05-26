@@ -70,8 +70,18 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         userPromptTemplate: "{text}"
     )
 
-    /// Gemma / TranslateGemma — chat template path. No system prompt (Gemma merges poorly).
-    /// Uses higher token count to accommodate possible reasoning/think tokens before translation.
+    /// Gemma 4 (E2B, E4B) — raw prompt to bypass broken gemma4 chat template detection.
+    /// These GGUFs lack a tokenizer.chat_template; the fallback works for gemma3
+    /// (TranslateGemma) but fails silently for gemma4 architecture.
+    static let gemma4Raw = ModelConfiguration(
+        promptStrategy: .raw,
+        batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
+        temperature: 0.3, topP: 0.9, topK: 40, seed: 1234, useGPU: false,
+        systemPrompt: "",
+        userPromptTemplate: "<start_of_turn>user\nTranslate to {target}: {text}<end_of_turn>\n<start_of_turn>model\n"
+    )
+
+    /// Gemma 3 / TranslateGemma — chat template path. No system prompt (Gemma merges poorly).
     static let gemmaInstruct = ModelConfiguration(
         promptStrategy: .chatUserOnly,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,

@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct ModelCatalogView: View {
     @Binding var selectedModelID: String

@@ -8,6 +8,7 @@
 
 import Foundation
 import Observation
+import OSLog
 
 /// Tracks which provider is currently active and manages model lifecycle.
 @Observable

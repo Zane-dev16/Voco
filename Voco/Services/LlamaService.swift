@@ -9,6 +9,7 @@
 import Foundation
 import Observation
 import SwiftLlama
+import OSLog
 
 /// Manages GGUF model loading and text generation via llama.cpp using SwiftLlama.
 ///
