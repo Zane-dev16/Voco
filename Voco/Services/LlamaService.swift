@@ -78,6 +78,7 @@ final class LlamaService {
 
         let sampling = samplingConfig(from: model.config)
 
+        let rawOutput: String
         switch model.config.promptStrategy {
         case .raw:
             let resolvedTarget: String
@@ -96,13 +97,16 @@ final class LlamaService {
                 .replacingOccurrences(of: "{target_code}", with: resolvedTarget)
                 .replacingOccurrences(of: "{text}", with: text)
             var output = ""
-            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling) { output += token }
-            return output.trimmingCharacters(in: .whitespacesAndNewlines)
+            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos) { output += token }
+            rawOutput = output
 
         case .chatUserOnly, .chatWithSystem:
             let messages = buildMessages(text: text, source: sourceLanguage, target: targetLanguage, config: model.config)
-            return Self.stripThinkingTags(from: try await service.respond(to: messages, samplingConfig: sampling))
+            rawOutput = Self.stripThinkingTags(from: try await service.respond(to: messages, samplingConfig: sampling))
         }
+
+        return truncateAtStopStrings(rawOutput, config: model.config)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Translates text with streaming token generation.
@@ -127,20 +131,45 @@ final class LlamaService {
                 .replacingOccurrences(of: "{target}", with: resolvedTarget)
                 .replacingOccurrences(of: "{text}", with: text)
 
+            let stopStrings = model.config.stopStrings
             return AsyncThrowingStream { continuation in
                 Task {
                     do {
-                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling)
+                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos)
                         var buffer = ""
+                        var stopped = false
                         for try await token in stream {
+                            if stopped { continue }
                             buffer += token
+                            // Check stop strings
+                            if !stopStrings.isEmpty {
+                                for stop in stopStrings {
+                                    if buffer.contains(stop) {
+                                        if let range = buffer.range(of: stop) {
+                                            let before = String(buffer[..<range.lowerBound])
+                                            if !before.isEmpty {
+                                                continuation.yield(before)
+                                            }
+                                        }
+                                        stopped = true
+                                        break
+                                    }
+                                }
+                            }
+                            if stopped { break }
                             // Flush every few characters to avoid flicker
                             if buffer.count >= 4 {
-                                continuation.yield(buffer)
-                                buffer = ""
+                                // Only flush if no stop string prefix is forming
+                                let safeToFlush = !stopStrings.contains(where: { stop in
+                                    stop.hasPrefix(buffer) || buffer.hasPrefix(stop)
+                                })
+                                if safeToFlush {
+                                    continuation.yield(buffer)
+                                    buffer = ""
+                                }
                             }
                         }
-                        if !buffer.isEmpty {
+                        if !buffer.isEmpty && !stopped {
                             continuation.yield(buffer)
                         }
                         continuation.finish()
@@ -159,14 +188,33 @@ final class LlamaService {
             config: model.config
         )
 
+        let stopStrings = model.config.stopStrings
         return AsyncThrowingStream { continuation in
             Task {
                 do {
                     let stream = try await service.streamCompletion(of: messages, samplingConfig: sampling)
                     var buffer = ""
                     var inThinkBlock = false
+                    var stopped = false
                     for try await token in stream {
+                        if stopped { continue }
                         buffer += token
+                        // Check stop strings
+                        if !stopStrings.isEmpty {
+                            for stop in stopStrings {
+                                if buffer.contains(stop) {
+                                    if let range = buffer.range(of: stop) {
+                                        let before = String(buffer[..<range.lowerBound])
+                                        if !before.isEmpty && !inThinkBlock {
+                                            continuation.yield(before)
+                                        }
+                                    }
+                                    stopped = true
+                                    break
+                                }
+                            }
+                        }
+                        if stopped { break }
                         if !inThinkBlock {
                             if let range = buffer.range(of: "<think>") {
                                 let before = String(buffer[..<range.lowerBound])
@@ -190,7 +238,7 @@ final class LlamaService {
                             }
                         }
                     }
-                    if !buffer.isEmpty && !inThinkBlock {
+                    if !buffer.isEmpty && !inThinkBlock && !stopped {
                         continuation.yield(buffer)
                     }
                     continuation.finish()
@@ -238,6 +286,68 @@ final class LlamaService {
             result.removeSubrange(start.lowerBound..<end.upperBound)
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Truncates output at the first occurrence of any configured stop string.
+    /// Returns the text up to (but not including) the stop string, or the original
+    /// text if no stop string is found.
+    private func truncateAtStopStrings(_ text: String, config: ModelConfiguration) -> String {
+        guard !config.stopStrings.isEmpty else { return text }
+        var earliestRange: Range<String.Index>?
+        for stop in config.stopStrings {
+            if let range = text.range(of: stop) {
+                if earliestRange == nil || range.lowerBound < earliestRange!.lowerBound {
+                    earliestRange = range
+                }
+            }
+        }
+        guard let range = earliestRange else { return text }
+        return String(text[..<range.lowerBound])
+    }
+
+    /// Strips common AI verbosity preambles from the start of model output.
+    /// Applied universally to all models — catches patterns like
+    /// "Here is the translation:\n\nHola" → "Hola" without affecting
+    /// legitimate multi-paragraph translations.
+    ///
+    /// Strategy: if the output starts with a known preamble line (case-insensitive),
+    /// drop that line and any immediately following blank lines. This is safe because
+    /// translation output begins in the target language, while preambles are always
+    /// in the source language (English).
+    static func stripPreamble(from text: String) -> String {
+        let lower = text.lowercased()
+        let preamblePatterns = [
+            "here is the translation",
+            "here's the translation",
+            "here is a translation",
+            "sure, here",
+            "certainly",
+            "of course",
+            "i'll translate",
+            "let me translate",
+            "the translation is",
+            "the translation of",
+            "translated text:",
+            "here you go",
+            "here it is",
+            "this translates to",
+        ]
+        for pattern in preamblePatterns {
+            if lower.hasPrefix(pattern) {
+                // Find end of the preamble line
+                if let newlineIdx = text.firstIndex(of: "\n") {
+                    var rest = String(text[text.index(after: newlineIdx)...])
+                    // Also strip any blank lines immediately after the preamble
+                    while rest.hasPrefix("\n") || rest.hasPrefix("\r\n") {
+                        rest = String(rest.dropFirst(rest.hasPrefix("\r\n") ? 2 : 1))
+                    }
+                    return rest
+                }
+                // Preamble was the entire output — return empty
+                return ""
+            }
+        }
+        return text
     }
 }
 
