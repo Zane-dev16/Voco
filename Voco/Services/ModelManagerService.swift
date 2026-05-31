@@ -125,6 +125,14 @@ final class ModelManagerService {
         let fileURL = modelsDirectory.appendingPathComponent(model.filename)
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try FileManager.default.removeItem(at: fileURL)
+            // Verify the file is actually gone — if a file handle is still open,
+            // the directory entry may be removed but the inode persists.
+            // Retry once after a short delay to allow pending handles to close.
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                // File still present — likely held by a lingering file descriptor.
+                Thread.sleep(forTimeInterval: 0.3)
+                try FileManager.default.removeItem(at: fileURL)
+            }
         }
         downloadStates[model.id] = .notDownloaded
     }

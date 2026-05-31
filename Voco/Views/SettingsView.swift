@@ -53,7 +53,7 @@ struct SettingsView: View {
             presenting: modelToDelete
         ) { model in
             Button("Delete \(model.formattedSize)", role: .destructive) {
-                performDelete(model)
+                Task { await performDelete(model) }
             }
             Button("Keep", role: .cancel) {}
         } message: { model in
@@ -312,14 +312,14 @@ struct SettingsView: View {
         showDeleteConfirmation = true
     }
 
-    private func performDelete(_ model: TranslationModel) {
+    private func performDelete(_ model: TranslationModel) async {
         if lifecycleManager.activeModelID == model.id {
-            Task { await lifecycleManager.deactivate() }
+            await lifecycleManager.deactivate()
         }
         do {
             try downloadManager.deleteModel(model)
         } catch {
-VocoLog.models.error("[Settings] Delete error: \\(error)")
+VocoLog.models.error("[Settings] Delete error: \(error)")
         }
     }
 }

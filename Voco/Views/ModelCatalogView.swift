@@ -67,7 +67,7 @@ struct ModelCatalogView: View {
             presenting: modelToDelete
         ) { model in
             Button("Delete \(model.formattedSize)", role: .destructive) {
-                performDelete(model)
+                Task { await performDelete(model) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { model in
@@ -166,14 +166,14 @@ struct ModelCatalogView: View {
         }
     }
 
-    private func performDelete(_ model: TranslationModel) {
+    private func performDelete(_ model: TranslationModel) async {
         if lifecycleManager.activeModelID == model.id {
-            Task { await lifecycleManager.deactivate() }
+            await lifecycleManager.deactivate()
         }
         do {
             try downloadManager.deleteModel(model)
         } catch {
-VocoLog.models.error("[ModelCatalog] Delete error: \\(error)")
+VocoLog.models.error("[ModelCatalog] Delete error: \(error)")
         }
     }
 

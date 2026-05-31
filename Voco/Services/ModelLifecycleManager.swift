@@ -86,10 +86,15 @@ final class ModelLifecycleManager {
     }
 
     /// Unload the currently active model and free memory.
+    /// Adds a short delay after unloading to allow the llama.cpp context
+    /// and model to fully release their file handles before any caller
+    /// attempts to delete the GGUF file from disk.
     func deactivate() async {
         lifecycleState = .unloading
         inferenceService.unloadModel()
         activeModelID = nil
+        // Allow actor deallocation and llama_model_free to release file handles.
+        try? await Task.sleep(nanoseconds: 500_000_000) // 500 ms
         lifecycleState = .idle
     }
 
