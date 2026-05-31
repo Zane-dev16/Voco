@@ -92,6 +92,7 @@ struct OnboardingView: View {
                     ProgressView(value: downloadProgress)
                         .tint(model.providerColor)
                         .padding(.horizontal, 32)
+                        .accessibilityValue("\(Int(downloadProgress * 100)) percent")
 
                     Text("\(formattedDownloadedBytes) of \(model.formattedSize)")
                         .font(.caption)

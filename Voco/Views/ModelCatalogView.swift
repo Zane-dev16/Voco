@@ -137,6 +137,8 @@ struct ModelCatalogView: View {
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Storage: \(formattedTotalStorage) used, \(downloadedCount) of \(TranslationModel.availableModels.count) models downloaded")
     }
 
     // MARK: - Actions

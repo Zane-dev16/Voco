@@ -142,6 +142,7 @@ struct TranslationView: View {
             }
             .buttonStyle(.plain)
             .menuStyle(.borderlessButton)
+            .accessibilityLabel("Source language")
 
             Button {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
@@ -157,6 +158,7 @@ struct TranslationView: View {
             }
             .buttonStyle(.plain)
             .frame(width: 52)
+            .accessibilityLabel("Swap languages")
 
             Menu {
                 ForEach(Language.allCases) { lang in
@@ -184,6 +186,7 @@ struct TranslationView: View {
             }
             .buttonStyle(.plain)
             .menuStyle(.borderlessButton)
+            .accessibilityLabel("Target language")
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.vertical, 12)
@@ -198,6 +201,7 @@ struct TranslationView: View {
                 .focused($isInputFocused)
                 .scrollContentBackground(.hidden)
                 .frame(height: 140)
+                .accessibilityLabel("Text to translate")
                 .overlay(alignment: .topLeading) {
                     if inputText.isEmpty {
                         Text("Enter text to translate...")
@@ -227,6 +231,7 @@ struct TranslationView: View {
                 }
                 .buttonStyle(.plain)
                 .symbolEffect(.pulse, options: .repeating, value: isRecording)
+                .accessibilityLabel(isRecording ? "Stop recording" : "Dictate text")
 
                 Spacer()
 
@@ -246,6 +251,7 @@ struct TranslationView: View {
                             .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear text")
                 } else {
                     Button {
                         if let pasted = UIPasteboard.general.string {
@@ -260,6 +266,7 @@ struct TranslationView: View {
                             .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Paste from clipboard")
                 }
             }
             .padding(.horizontal, 16)
@@ -375,18 +382,18 @@ struct TranslationView: View {
 
             // Action bar
             HStack(spacing: 0) {
-                actionButton(icon: "speaker.wave.2.fill", action: speakOutput)
+                actionButton(icon: "speaker.wave.2.fill", label: "Speak translation", action: speakOutput)
                 Divider().frame(height: 24)
-                actionButton(icon: "doc.on.doc", action: copyOutput)
+                actionButton(icon: "doc.on.doc", label: "Copy translation", action: copyOutput)
                 Divider().frame(height: 24)
-                actionButton(icon: "square.and.arrow.up", action: { showShareSheet = true })
+                actionButton(icon: "square.and.arrow.up", label: "Share translation", action: { showShareSheet = true })
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
         }
     }
 
-    private func actionButton(icon: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 20))
@@ -394,6 +401,7 @@ struct TranslationView: View {
                 .frame(maxWidth: .infinity, minHeight: 48)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     // MARK: - Error Banner

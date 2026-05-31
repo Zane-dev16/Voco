@@ -159,6 +159,7 @@ struct SettingsView: View {
                 Image(systemName: "trash").font(.caption).foregroundStyle(.red)
             }
             .buttonStyle(.borderless)
+            .accessibilityLabel("Delete \(model.displayName)")
         }
     }
 
