@@ -97,7 +97,7 @@ final class LlamaService {
                 .replacingOccurrences(of: "{target_code}", with: resolvedTarget)
                 .replacingOccurrences(of: "{text}", with: text)
             var output = ""
-            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos) { output += token }
+            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling) { output += token }
             rawOutput = output
 
         case .chatUserOnly, .chatWithSystem:
@@ -135,7 +135,7 @@ final class LlamaService {
             return AsyncThrowingStream { continuation in
                 Task {
                     do {
-                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos)
+                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling)
                         var buffer = ""
                         var stopped = false
                         for try await token in stream {
