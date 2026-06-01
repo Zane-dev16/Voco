@@ -16,6 +16,8 @@ struct OnboardingView: View {
 
     @State private var isActivating = false
     @State private var showSuccess = false
+    @State private var showCellularWarning = false
+    @State private var showStorageWarning = false
 
     /// Progress from the live download state (0.0–1.0).
     private var downloadProgress: Double {
@@ -115,6 +117,18 @@ struct OnboardingView: View {
             Spacer()
         }
         .background(Color(.systemGroupedBackground))
+        .alert("Download over cellular?", isPresented: $showCellularWarning) {
+            Button("Download Anyway") { performDownload() }
+            Button("Cancel", role: .cancel) { isActivating = false }
+        } message: {
+            Text("This model is \(model.formattedSize). Downloading over cellular may use a significant amount of data. We recommend using Wi-Fi.")
+        }
+        .alert("Insufficient Storage", isPresented: $showStorageWarning) {
+            Button("Try Anyway") { performDownload() }
+            Button("Cancel", role: .cancel) { isActivating = false }
+        } message: {
+            Text("This model requires about \(ByteCountFormatter.string(fromByteCount: model.fileSizeBytes * 2, countStyle: .file)) of free space. Your device may not have enough storage available.")
+        }
     }
 
     // MARK: - Button label
@@ -143,6 +157,26 @@ struct OnboardingView: View {
 
     private func handleAction() {
         guard !isDownloading, !isActivating else { return }
+        isActivating = true
+
+        Task {
+            let result = await DownloadPreflight.check(modelSizeBytes: model.fileSizeBytes)
+            await MainActor.run {
+                switch result {
+                case .proceed:
+                    performDownload()
+                case .cellularWarning:
+                    showCellularWarning = true
+                case .insufficientStorage:
+                    showStorageWarning = true
+                }
+            }
+        }
+    }
+
+    private func performDownload() {
+        showCellularWarning = false
+        showStorageWarning = false
         isActivating = true
 
         Task {

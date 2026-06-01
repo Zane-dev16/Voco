@@ -259,6 +259,8 @@ private struct ModelCard: View {
     let onCancel: () -> Void
 
     @State private var isPressed = false
+    @State private var showCellularWarning = false
+    @State private var showStorageWarning = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -322,6 +324,34 @@ private struct ModelCard: View {
         .onLongPressGesture(minimumDuration: 0.01, pressing: { pressing in
             isPressed = pressing
         }, perform: {})
+        .alert("Download over cellular?", isPresented: $showCellularWarning) {
+            Button("Download Anyway") { onDownload() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This model is \(model.formattedSize). Downloading over cellular may use a significant amount of data.")
+        }
+        .alert("Insufficient Storage", isPresented: $showStorageWarning) {
+            Button("Try Anyway") { onDownload() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This model requires about \(ByteCountFormatter.string(fromByteCount: model.fileSizeBytes * 2, countStyle: .file)) of free space.")
+        }
+    }
+
+    private func startDownload() {
+        Task {
+            let result = await DownloadPreflight.check(modelSizeBytes: model.fileSizeBytes)
+            await MainActor.run {
+                switch result {
+                case .proceed:
+                    onDownload()
+                case .cellularWarning:
+                    showCellularWarning = true
+                case .insufficientStorage:
+                    showStorageWarning = true
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -337,7 +367,7 @@ private struct ModelCard: View {
     private var actionBarContent: some View {
         switch downloadState {
         case .notDownloaded:
-            Button(action: onDownload) {
+            Button(action: startDownload) {
                 Label("Download", systemImage: "arrow.down.circle")
                     .font(.subheadline.weight(.medium))
                     .frame(maxWidth: .infinity)
