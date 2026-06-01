@@ -111,6 +111,11 @@ struct ModelLicensesView: View {
                         Label("License", systemImage: "arrow.up.right").font(.caption)
                     }
                 }
+                if let url = model.usePolicyURL, let link = URL(string: url) {
+                    Link(destination: link) {
+                        Label("Prohibited Use Policy", systemImage: "hand.raised.slash").font(.caption)
+                    }
+                }
             }
 
             // Llama attribution

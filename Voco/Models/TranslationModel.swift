@@ -34,6 +34,7 @@ struct TranslationModel: Identifiable, Hashable, Sendable {
     let baseModelURL: String?
     let licenseName: String
     let licenseURL: String?
+    let usePolicyURL: String?          // Prohibited use / acceptable use policy URL
     let conversionSummary: String
     let runtimeNotes: String?
     let attributionText: String?
@@ -65,6 +66,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/tencent/Hy-MT1.5-1.8B",
             licenseName: "Tencent Hunyuan Model License (custom)",
             licenseURL: "https://huggingface.co/tencent/Hy-MT1.5-1.8B",
+            usePolicyURL: nil,
             conversionSummary: "1.25-bit AngelSlim STQ1_0 GGUF by Tencent. Optimised for ARM NEON on Apple Silicon.",
             runtimeNotes: "CPU/NEON only (GPU disabled). ~44 tok/s on M2. Uses raw SentencePiece prompt.",
             attributionText: nil, noticeText: nil,
@@ -84,6 +86,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/tencent/Hy-MT2-1.8B",
             licenseName: "Tencent Hunyuan Model License (custom)",
             licenseURL: "https://huggingface.co/tencent/Hy-MT2-1.8B",
+            usePolicyURL: nil,
             conversionSummary: "1.25-bit AngelSlim STQ1_0 GGUF by Tencent. Next-gen 33-language model.",
             runtimeNotes: "CPU/NEON only (GPU disabled). Uses raw SentencePiece prompt.",
             attributionText: nil, noticeText: nil,
@@ -103,6 +106,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/tencent/Hy-MT1.5-1.8B",
             licenseName: "Tencent Hunyuan Model License (custom)",
             licenseURL: "https://huggingface.co/tencent/Hy-MT1.5-1.8B",
+            usePolicyURL: nil,
             conversionSummary: "Q4_K_M GGUF for maximum quality. Converted by Tencent.",
             runtimeNotes: "CPU/NEON only. Uses raw SentencePiece prompt.",
             attributionText: nil, noticeText: nil,
@@ -124,6 +128,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct",
             licenseName: "Llama 3.2 Community License",
             licenseURL: "https://www.llama.com/llama3_2/license/",
+            usePolicyURL: nil,
             conversionSummary: "Converted to GGUF and quantised to Q8_0 by Zanish Labs for on-device use.",
             runtimeNotes: nil,
             attributionText: "Built with Meta Llama 3.2",
@@ -144,6 +149,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct",
             licenseName: "Llama 3.2 Community License",
             licenseURL: "https://www.llama.com/llama3_2/license/",
+            usePolicyURL: nil,
             conversionSummary: "Converted to GGUF and quantised to IQ3_M by Zanish Labs for on-device use.",
             runtimeNotes: nil,
             attributionText: "Built with Meta Llama 3.2",
@@ -166,6 +172,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/Qwen/Qwen3.5-0.8B",
             licenseName: "Apache 2.0",
             licenseURL: "https://www.apache.org/licenses/LICENSE-2.0",
+            usePolicyURL: nil,
             conversionSummary: "Converted to GGUF and quantised to Q8_0 by Zanish Labs for on-device use.",
             runtimeNotes: nil,
             attributionText: nil, noticeText: nil,
@@ -185,6 +192,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/Qwen/Qwen3.5-2B",
             licenseName: "Apache 2.0",
             licenseURL: "https://www.apache.org/licenses/LICENSE-2.0",
+            usePolicyURL: nil,
             conversionSummary: "Converted to GGUF and quantised to Q4_K_M by Zanish Labs for on-device use.",
             runtimeNotes: nil,
             attributionText: nil, noticeText: nil,
@@ -204,6 +212,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/Qwen/Qwen3.5-4B",
             licenseName: "Apache 2.0",
             licenseURL: "https://www.apache.org/licenses/LICENSE-2.0",
+            usePolicyURL: nil,
             conversionSummary: "Converted to GGUF and quantised to Q4_K_M by Zanish Labs for on-device use.",
             runtimeNotes: nil,
             attributionText: nil, noticeText: nil,
@@ -225,6 +234,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/google/gemma-4-E2B-it",
             licenseName: "Gemma License (custom)",
             licenseURL: "https://ai.google.dev/gemma/terms",
+            usePolicyURL: "https://ai.google.dev/gemma/prohibited_use_policy",
             conversionSummary: "Converted to GGUF and quantised to Q4_K_M by Zanish Labs for on-device use.",
             runtimeNotes: nil,
             attributionText: nil, noticeText: nil,
@@ -244,6 +254,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/google/gemma-4-E4B-it",
             licenseName: "Gemma License (custom)",
             licenseURL: "https://ai.google.dev/gemma/terms",
+            usePolicyURL: "https://ai.google.dev/gemma/prohibited_use_policy",
             conversionSummary: "Converted to GGUF and quantised to Q4_K_M by Zanish Labs for on-device use.",
             runtimeNotes: nil,
             attributionText: nil, noticeText: nil,
@@ -263,6 +274,7 @@ extension TranslationModel {
             baseModelURL: "https://huggingface.co/google/TranslateGemma-4B-it",
             licenseName: "Gemma License (custom)",
             licenseURL: "https://ai.google.dev/gemma/terms",
+            usePolicyURL: "https://ai.google.dev/gemma/prohibited_use_policy",
             conversionSummary: "Converted to GGUF and quantised to Q2_K by Zanish Labs for on-device use.",
             runtimeNotes: "Translation-specialist Gemma variant. Optimised for direct translation tasks.",
             attributionText: nil, noticeText: nil,
