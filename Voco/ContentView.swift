@@ -21,9 +21,6 @@ struct ContentView: View {
         }
         .environment(\.lifecycleManager, lifecycleManager)
         .environment(\.downloadManager, downloadManager)
-        .onChange(of: selectedModelID) { _, newID in
-            autoActivateModel(newID)
-        }
         .onAppear {
             autoActivateModel(selectedModelID)
         }
