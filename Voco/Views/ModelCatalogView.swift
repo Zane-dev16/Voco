@@ -143,26 +143,33 @@ struct ModelCatalogView: View {
 
     // MARK: - Actions
 
+    @State private var loadTask: Task<Void, Never>?
+
     private func selectModel(_ model: TranslationModel) {
         guard model.id != selectedModelID else { return }
-
-        if lifecycleManager.activeModelID != nil {
-            Task { await lifecycleManager.deactivate() }
-        }
+        // Cancel any in-flight load to prevent overlapping model loads
+        loadTask?.cancel()
         selectedModelID = model.id
 
-        if downloadManager.isModelDownloaded(model) {
-            Task {
-                try? await lifecycleManager.activate(model)
-                await MainActor.run {
-                    lastActivatedModel = model.displayName
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                        showActivateSuccess = true
-                    }
+        guard downloadManager.isModelDownloaded(model) else {
+            dismiss()
+            return
+        }
+
+        loadTask = Task {
+            // Sequentially deactivate old model, then activate new one
+            if lifecycleManager.activeModelID != nil {
+                await lifecycleManager.deactivate()
+            }
+            guard !Task.isCancelled else { return }
+            try? await lifecycleManager.activate(model)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                lastActivatedModel = model.displayName
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    showActivateSuccess = true
                 }
             }
-        } else {
-            dismiss()
         }
     }
 

@@ -296,14 +296,23 @@ struct SettingsView: View {
 
     // MARK: - Actions
 
+    @State private var loadTask: Task<Void, Never>?
+
     private func selectModel(_ model: TranslationModel) {
         guard model.id != selectedModelID else { return }
-        if lifecycleManager.activeModelID != nil {
-            Task { await lifecycleManager.deactivate() }
-        }
+        // Cancel any in-flight load to prevent overlapping model loads
+        loadTask?.cancel()
         selectedModelID = model.id
-        if downloadManager.isModelDownloaded(model) {
-            Task { try? await lifecycleManager.activate(model) }
+        guard downloadManager.isModelDownloaded(model) else { return }
+        loadTask = Task {
+            // Sequentially deactivate old model, then activate new one.
+            // activate() also deactivates internally, but awaiting explicitly
+            // avoids the race where both models briefly occupy RAM.
+            if lifecycleManager.activeModelID != nil {
+                await lifecycleManager.deactivate()
+            }
+            guard !Task.isCancelled else { return }
+            try? await lifecycleManager.activate(model)
         }
     }
 
