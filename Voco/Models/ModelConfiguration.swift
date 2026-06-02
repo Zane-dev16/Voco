@@ -3,10 +3,11 @@
 //  Voco
 //
 //  Per-model runtime configuration for LlamaService.
-//  Original prompts preserved (proven working). Targeted changes:
+//  Targeted changes:
 //    - temperature: 0.0 (was 0.3) — greedy, prevents creative detours
 //    - llamaInstruct: stopStrings ["<|im_end|>"] — fixes chat artifact leak
 //    - gemmaInstruct: chatUserOnly, maxTokens=32 — fixes TranslateGemma verbosity
+//    - qwenInstruct: user-message-level constraint — prevents alternatives on long text
 //
 
 import Foundation
@@ -69,15 +70,19 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         stopStrings: ["<|im_end|>"]
     )
 
-    /// Qwen2.5 Instruct — ChatML format via chat template.
+    /// Qwen2.5 / Qwen3.5 Instruct — ChatML format.
+    /// Constraint is in the user message because Qwen follows user-level
+    /// instructions more strictly than system prompts for longer text.
+    /// The "Translate to X:\n\ntext\n\nTranslation:" completion format
+    /// makes Qwen fill in one slot instead of producing alternatives.
     static let qwenInstruct = ModelConfiguration(
         promptStrategy: .chatWithSystem,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
-        systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary, notes, or explanations.",
-        userPromptTemplate: "{text}",
+        systemPrompt: "You are a translator. Output the translation and nothing else.",
+        userPromptTemplate: "Translate to {target}:\n\n{text}\n\nTranslation:",
         addBos: nil,
-        stopStrings: []
+        stopStrings: ["\n\n"]
     )
 
     /// Gemma 4 (E2B, E4B) — raw prompt to bypass broken gemma4 chat template detection.
