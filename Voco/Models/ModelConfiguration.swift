@@ -3,11 +3,6 @@
 //  Voco
 //
 //  Per-model runtime configuration for LlamaService.
-//  Targeted changes:
-//    - temperature: 0.0 (was 0.3) — greedy, prevents creative detours
-//    - llamaInstruct: stopStrings ["<|im_end|>"] — fixes chat artifact leak
-//    - gemmaInstruct: chatUserOnly, maxTokens=32 — fixes TranslateGemma verbosity
-//    - qwenInstruct: user-message-level constraint — prevents alternatives on long text
 //
 
 import Foundation
@@ -36,7 +31,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     // MARK: - Presets
 
-    /// Small models ~300-500 MB. Chat template path.
+    /// Small models ~300-500 MB.
     static let compact = ModelConfiguration(
         promptStrategy: .chatWithSystem,
         batchSize: 512, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
@@ -58,8 +53,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         stopStrings: []
     )
 
-    /// Llama 3.2 Instruct — chat template with translation system prompt.
-    /// stopStrings: Llama 3.2 generates beyond <|im_end|> on some inputs.
+    /// Llama 3.2 Instruct.
     static let llamaInstruct = ModelConfiguration(
         promptStrategy: .chatWithSystem,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
@@ -71,20 +65,18 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
     )
 
     /// Qwen2.5 / Qwen3.5 Instruct — ChatML format.
-    /// Completion-style prompt guides Qwen to fill one slot.
-    /// stopStrings: ["<|im_end|>"] catches chat template continuation
-    /// (same pattern as Llama), without the "\n\n" that killed Qwen output.
+    /// One-line directive format with <|im_end|> stop.
     static let qwenInstruct = ModelConfiguration(
         promptStrategy: .chatWithSystem,
         batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
         systemPrompt: "You are a translator. Output the translation and nothing else.",
-        userPromptTemplate: "Translate to {target}:\n\n{text}\n\nTranslation:",
+        userPromptTemplate: "Translate to {target}: {text}",
         addBos: nil,
         stopStrings: ["<|im_end|>"]
     )
 
-    /// Gemma 4 (E2B, E4B) — raw prompt to bypass broken gemma4 chat template detection.
+    /// Gemma 4 (E2B, E4B) — raw prompt to bypass broken chat template.
     static let gemma4Raw = ModelConfiguration(
         promptStrategy: .raw,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
@@ -96,7 +88,6 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
     )
 
     /// TranslateGemma 4B — chatUserOnly with tight token limit.
-    /// This model produces explanations and alternatives without aggressive constraints.
     static let gemmaInstruct = ModelConfiguration(
         promptStrategy: .chatUserOnly,
         batchSize: 256, maxTokenCount: 32, threadCount: 2, threadCountBatch: 2,
@@ -107,7 +98,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         stopStrings: ["\n\n"]
     )
 
-    /// NLLB-200 — dedicated translation model with language token prefix.
+    /// NLLB-200 — dedicated translation model.
     static let nllbTranslate = ModelConfiguration(
         promptStrategy: .raw,
         batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
