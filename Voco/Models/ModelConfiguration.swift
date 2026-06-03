@@ -70,15 +70,18 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         stopStrings: ["<|im_end|>"]
     )
 
-    /// Qwen2.5 / Qwen3.5 Instruct — ChatML format via chat template.
+    /// Qwen2.5 / Qwen3.5 Instruct — ChatML format.
+    /// Completion-style prompt guides Qwen to fill one slot.
+    /// stopStrings: ["<|im_end|>"] catches chat template continuation
+    /// (same pattern as Llama), without the "\n\n" that killed Qwen output.
     static let qwenInstruct = ModelConfiguration(
         promptStrategy: .chatWithSystem,
-        batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
+        batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
-        systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary, notes, or explanations.",
-        userPromptTemplate: "{text}",
+        systemPrompt: "You are a translator. Output the translation and nothing else.",
+        userPromptTemplate: "Translate to {target}:\n\n{text}\n\nTranslation:",
         addBos: nil,
-        stopStrings: []
+        stopStrings: ["<|im_end|>"]
     )
 
     /// Gemma 4 (E2B, E4B) — raw prompt to bypass broken gemma4 chat template detection.
