@@ -196,9 +196,20 @@ final class LlamaService {
                     var buffer = ""
                     var inThinkBlock = false
                     var stopped = false
+                    var foundFirstContent = false
                     for try await token in stream {
                         if stopped { continue }
                         buffer += token
+                        // Skip leading whitespace/newlines until real content appears
+                        if !foundFirstContent {
+                            if buffer.allSatisfy({ $0.isWhitespace || $0.isNewline }) {
+                                continue
+                            }
+                            foundFirstContent = true
+                            // Strip leading whitespace from first content buffer
+                            buffer = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if buffer.isEmpty { continue }
+                        }
                         // Check stop strings
                         if !stopStrings.isEmpty {
                             for stop in stopStrings {
