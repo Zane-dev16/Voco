@@ -519,7 +519,6 @@ VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
     }
 
     // MARK: - Translation Logic
-    // NOTE: Preserved exactly for hy-mt1.5-1.8b-stq STQ1_0 compatibility.
 
     private func performTranslation() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -636,7 +635,7 @@ private struct ShareSheet: UIViewControllerRepresentable {
 // MARK: - Preview
 
 #Preview {
-    TranslationView(selectedModelID: .constant("hy-mt1.5-1.8b-stq"))
+    TranslationView(selectedModelID: .constant("hy-mt2-1.8b-stq"))
         .environment(\.lifecycleManager, ModelLifecycleManager())
         .environment(\.downloadManager, ModelManagerService())
 }

@@ -53,26 +53,6 @@ extension TranslationModel {
     static let availableModels: [TranslationModel] = [
         // ── Tencent ──────────────────────────────────────────
         TranslationModel(
-            id: "hy-mt1.5-1.8b-stq", displayName: "Hy-MT1.5 1.8B",
-            description: "1.25-bit Sherry STQ1_0. CPU/NEON optimized.",
-            provider: "Tencent",
-            sourceURL: URL(string: "https://huggingface.co/AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF/resolve/main/Hy-MT1.5-1.8B-1.25bit.gguf")!,
-            fileSizeBytes: 461_860_704, supportedLanguages: Language.allCases,
-            hfRepo: "AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF",
-            quantization: "1.25-bit STQ1_0", config: .hunyuanMT,
-            capability: .simulatorAndDevice, parameterCount: "1.8B",
-            sha256: "93e025c93cc082e73a3f142b757623a8b9cf541c020a8013ca4ee669556860ab",
-            baseModelName: "Hy-MT1.5 1.8B",
-            baseModelURL: "https://huggingface.co/tencent/Hy-MT1.5-1.8B",
-            licenseName: "Tencent Hunyuan Model License (custom)",
-            licenseURL: "https://huggingface.co/tencent/Hy-MT1.5-1.8B",
-            usePolicyURL: nil,
-            conversionSummary: "1.25-bit AngelSlim STQ1_0 GGUF by Tencent. Optimised for ARM NEON on Apple Silicon.",
-            runtimeNotes: "CPU/NEON only (GPU disabled). ~44 tok/s on M2. Uses raw SentencePiece prompt.",
-            attributionText: nil, noticeText: nil,
-            requiresBuiltWithLlamaAttribution: false
-        ),
-        TranslationModel(
             id: "hy-mt2-1.8b-stq", displayName: "Hy-MT2 1.8B",
             description: "1.25-bit STQ1_0. Next-gen 33-language translation.",
             provider: "Tencent",

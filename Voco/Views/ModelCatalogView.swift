@@ -518,7 +518,7 @@ private struct ToastView: View {
 
 #Preview {
     NavigationStack {
-        ModelCatalogView(selectedModelID: .constant("hy-mt1.5-1.8b-stq"))
+        ModelCatalogView(selectedModelID: .constant("hy-mt2-1.8b-stq"))
     }
     .environment(\.lifecycleManager, ModelLifecycleManager())
     .environment(\.downloadManager, ModelManagerService())

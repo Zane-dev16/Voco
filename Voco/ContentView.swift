@@ -12,7 +12,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var lifecycleManager = ModelLifecycleManager()
     @State private var downloadManager = ModelManagerService()
-    @State private var selectedModelID: String = "hy-mt1.5-1.8b-stq"
+    @State private var selectedModelID: String = "hy-mt2-1.8b-stq"
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
