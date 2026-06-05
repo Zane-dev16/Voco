@@ -1,11 +1,3 @@
-//
-//  LlamaService.swift
-//  Voco
-//
-//  GGUF model loading and inference via SwiftLlama.
-//  Per-model configuration is read from TranslationModel.config.
-//
-
 import Foundation
 import Observation
 import SwiftLlama
@@ -196,28 +188,20 @@ final class LlamaService {
                     var buffer = ""
                     var inThinkBlock = false
                     var stopped = false
-                    var foundFirstContent = false
+                    var hasYielded = false  // Track whether we've yielded real content
                     for try await token in stream {
                         if stopped { continue }
                         buffer += token
-                        // Skip leading whitespace/newlines until real content appears
-                        if !foundFirstContent {
-                            if buffer.allSatisfy({ $0.isWhitespace || $0.isNewline }) {
-                                continue
-                            }
-                            foundFirstContent = true
-                            // Strip leading whitespace from first content buffer
-                            buffer = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if buffer.isEmpty { continue }
-                        }
                         // Check stop strings
                         if !stopStrings.isEmpty {
                             for stop in stopStrings {
                                 if buffer.contains(stop) {
                                     if let range = buffer.range(of: stop) {
                                         let before = String(buffer[..<range.lowerBound])
-                                        if !before.isEmpty && !inThinkBlock {
-                                            continuation.yield(before)
+                                        let out = hasYielded ? before : before.trimmingLeadingNewlines()
+                                        if !out.isEmpty && !inThinkBlock {
+                                            continuation.yield(out)
+                                            hasYielded = true
                                         }
                                     }
                                     stopped = true
@@ -229,13 +213,19 @@ final class LlamaService {
                         if !inThinkBlock {
                             if let range = buffer.range(of: "<think>") {
                                 let before = String(buffer[..<range.lowerBound])
-                                if !before.isEmpty {
-                                    continuation.yield(before)
+                                let out = hasYielded ? before : before.trimmingLeadingNewlines()
+                                if !out.isEmpty {
+                                    continuation.yield(out)
+                                    hasYielded = true
                                 }
                                 buffer = ""
                                 inThinkBlock = true
                             } else if buffer.count > 20 {
-                                continuation.yield(buffer)
+                                let out = hasYielded ? buffer : buffer.trimmingLeadingNewlines()
+                                if !out.isEmpty {
+                                    continuation.yield(out)
+                                    hasYielded = true
+                                }
                                 buffer = ""
                             }
                         } else {
@@ -250,7 +240,10 @@ final class LlamaService {
                         }
                     }
                     if !buffer.isEmpty && !inThinkBlock && !stopped {
-                        continuation.yield(buffer)
+                        let out = hasYielded ? buffer : buffer.trimmingLeadingNewlines()
+                        if !out.isEmpty {
+                            continuation.yield(out)
+                        }
                     }
                     continuation.finish()
                 } catch {
@@ -315,51 +308,6 @@ final class LlamaService {
         guard let range = earliestRange else { return text }
         return String(text[..<range.lowerBound])
     }
-
-    /// Strips common AI verbosity preambles from the start of model output.
-    /// Applied universally to all models — catches patterns like
-    /// "Here is the translation:\n\nHola" → "Hola" without affecting
-    /// legitimate multi-paragraph translations.
-    ///
-    /// Strategy: if the output starts with a known preamble line (case-insensitive),
-    /// drop that line and any immediately following blank lines. This is safe because
-    /// translation output begins in the target language, while preambles are always
-    /// in the source language (English).
-    static func stripPreamble(from text: String) -> String {
-        let lower = text.lowercased()
-        let preamblePatterns = [
-            "here is the translation",
-            "here's the translation",
-            "here is a translation",
-            "sure, here",
-            "certainly",
-            "of course",
-            "i'll translate",
-            "let me translate",
-            "the translation is",
-            "the translation of",
-            "translated text:",
-            "here you go",
-            "here it is",
-            "this translates to",
-        ]
-        for pattern in preamblePatterns {
-            if lower.hasPrefix(pattern) {
-                // Find end of the preamble line
-                if let newlineIdx = text.firstIndex(of: "\n") {
-                    var rest = String(text[text.index(after: newlineIdx)...])
-                    // Also strip any blank lines immediately after the preamble
-                    while rest.hasPrefix("\n") || rest.hasPrefix("\r\n") {
-                        rest = String(rest.dropFirst(rest.hasPrefix("\r\n") ? 2 : 1))
-                    }
-                    return rest
-                }
-                // Preamble was the entire output — return empty
-                return ""
-            }
-        }
-        return text
-    }
 }
 
 // MARK: - Errors
@@ -375,5 +323,19 @@ enum LlamaError: LocalizedError {
         case .unsupportedLanguage(let lang):
             return "The language \"\(lang)\" is not supported by the current model."
         }
+    }
+}
+
+// MARK: - String Helpers
+
+private extension String {
+    /// Strips leading newlines and whitespace from the start of a string.
+    /// Used to remove ChatML template newlines from streaming output.
+    func trimmingLeadingNewlines() -> String {
+        var result = self
+        while result.hasPrefix("\n") || result.hasPrefix("\r") {
+            result = String(result.dropFirst())
+        }
+        return result.trimmingCharacters(in: .whitespaces)
     }
 }
