@@ -89,8 +89,13 @@ final class LlamaService {
                 .replacingOccurrences(of: "{target_code}", with: resolvedTarget)
                 .replacingOccurrences(of: "{text}", with: text)
             var output = ""
-            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling) { output += token }
-            rawOutput = output
+            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos) { output += token }
+            // Strip prompt echo using rawPromptMarker
+            if let marker = model.config.rawPromptMarker, let range = output.range(of: marker) {
+                rawOutput = String(output[range.upperBound...])
+            } else {
+                rawOutput = output
+            }
 
         case .chatUserOnly, .chatWithSystem:
             let messages = buildMessages(text: text, source: sourceLanguage, target: targetLanguage, config: model.config)
@@ -124,16 +129,36 @@ final class LlamaService {
                 .replacingOccurrences(of: "{text}", with: text)
 
             let stopStrings = model.config.stopStrings
+            let marker = model.config.rawPromptMarker
             return AsyncThrowingStream { continuation in
                 Task {
                     do {
-                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling)
+                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos)
                         var buffer = ""
                         var stopped = false
+                        var markerFound = marker == nil  // If no marker, start yielding immediately
                         for try await token in stream {
                             if stopped { continue }
                             buffer += token
-                            // Check stop strings
+
+                            // Look for rawPromptMarker to detect end of prompt echo
+                            if !markerFound {
+                                if let m = marker, let range = buffer.range(of: m) {
+                                    // Found marker — yield everything after it
+                                    let afterMarker = String(buffer[range.upperBound...])
+                                    buffer = afterMarker
+                                    markerFound = true
+                                } else {
+                                    // Keep accumulating but don't yield yet
+                                    // Trim buffer to avoid unbounded growth (marker shouldn't be >200 chars from end)
+                                    if buffer.count > 500 {
+                                        buffer = String(buffer.suffix(200))
+                                    }
+                                    continue
+                                }
+                            }
+
+                            // Check stop strings (only after marker is found)
                             if !stopStrings.isEmpty {
                                 for stop in stopStrings {
                                     if buffer.contains(stop) {
@@ -149,9 +174,8 @@ final class LlamaService {
                                 }
                             }
                             if stopped { break }
-                            // Flush every few characters to avoid flicker
+                            // Flush every few characters
                             if buffer.count >= 4 {
-                                // Only flush if no stop string prefix is forming
                                 let safeToFlush = !stopStrings.contains(where: { stop in
                                     stop.hasPrefix(buffer) || buffer.hasPrefix(stop)
                                 })
@@ -161,7 +185,7 @@ final class LlamaService {
                                 }
                             }
                         }
-                        if !buffer.isEmpty && !stopped {
+                        if !buffer.isEmpty && !stopped && markerFound {
                             continuation.yield(buffer)
                         }
                         continuation.finish()

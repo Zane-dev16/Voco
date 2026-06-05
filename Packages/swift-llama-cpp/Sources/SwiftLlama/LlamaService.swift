@@ -145,8 +145,8 @@ public final actor LlamaService {
 
     /// Respond to a raw text prompt, bypassing the chat template.
     /// Used for models with custom prompt formats (e.g. Tencent Hunyuan).
-    public func respondRaw(to text: String, samplingConfig: LlamaSamplingConfig) async throws -> String {
-        let stream = try await streamCompletionRaw(of: text, samplingConfig: samplingConfig)
+    public func respondRaw(to text: String, samplingConfig: LlamaSamplingConfig, addBos: Bool? = nil) async throws -> String {
+        let stream = try await streamCompletionRaw(of: text, samplingConfig: samplingConfig, addBos: addBos)
         var output = ""
         for try await token in stream {
             output += token
@@ -156,10 +156,10 @@ public final actor LlamaService {
 
     /// Stream tokens from a raw text prompt, bypassing the chat template.
     /// Suitable for models with native prompt formats like Hunyuan MT.
-    public func streamCompletionRaw(of text: String, samplingConfig: LlamaSamplingConfig) async throws -> AsyncThrowingStream<String, Error> {
+    public func streamCompletionRaw(of text: String, samplingConfig: LlamaSamplingConfig, addBos: Bool? = nil) async throws -> AsyncThrowingStream<String, Error> {
         let llama = try initializeLlamaIfNecessary()
         await stopCompletion()
-        try await llama.initializeCompletion(text: text)
+        try await llama.initializeCompletion(text: text, addBos: addBos)
         await llama.updateSamplingConfig(samplingConfig)
 
         return AsyncThrowingStream { continuation in

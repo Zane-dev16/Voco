@@ -28,6 +28,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
     let userPromptTemplate: String
     let addBos: Bool?
     let stopStrings: [String]
+    let rawPromptMarker: String?
 
     // MARK: - Presets
 
@@ -39,7 +40,8 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",
         userPromptTemplate: "{text}",
         addBos: nil,
-        stopStrings: []
+        stopStrings: [],
+        rawPromptMarker: nil
     )
 
     /// Tencent Hy-MT1.5 — raw SentencePiece prompt format.
@@ -50,7 +52,8 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "",
         userPromptTemplate: "<｜hy_begin▁of▁sentence｜><｜hy_place▁holder▁no▁3｜>\n<｜hy_begin▁of▁sentence｜>\n<｜hy_User｜>Translate the following segment into {target}, without additional explanation.\n\n{text}\n<｜hy_Assistant｜>",
         addBos: nil,
-        stopStrings: []
+        stopStrings: [],
+        rawPromptMarker: nil
     )
 
     /// Llama 3.2 Instruct.
@@ -61,7 +64,8 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary, notes, or explanations.",
         userPromptTemplate: "{text}",
         addBos: nil,
-        stopStrings: ["<|im_end|>"]
+        stopStrings: ["</think>"],
+        rawPromptMarker: nil
     )
 
     /// Qwen2.5 / Qwen3.5 Instruct — ChatML format.
@@ -73,10 +77,12 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "You are a translator. Output the translation and nothing else.",
         userPromptTemplate: "Translate to {target}: {text}",
         addBos: nil,
-        stopStrings: ["<|im_end|>"]
+        stopStrings: ["<|im_end|>"],
+        rawPromptMarker: nil
     )
 
-    /// Gemma 4 (E2B, E4B) — raw prompt to bypass broken chat template.
+    /// Gemma 4 (E2B, E4B) — raw prompt with addBos override.
+    /// BPE tokenizer's shouldAddBos() returns false; force BOS via addBos: true.
     static let gemma4Raw = ModelConfiguration(
         promptStrategy: .raw,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
@@ -84,7 +90,8 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "",
         userPromptTemplate: "Translate to {target}: {text}\n{target}:",
         addBos: true,
-        stopStrings: ["\n\n", "\n{", "\n<"]
+        stopStrings: [],
+        rawPromptMarker: nil
     )
 
     /// TranslateGemma 4B — chatUserOnly with tight token limit.
@@ -95,7 +102,8 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "",
         userPromptTemplate: "Translate to {target}: {text}",
         addBos: nil,
-        stopStrings: ["\n\n"]
+        stopStrings: ["\n\n"],
+        rawPromptMarker: nil
     )
 
     /// NLLB-200 — dedicated translation model.
@@ -106,7 +114,8 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "",
         userPromptTemplate: "__{source_code}__ __{target_code}__ {text}",
         addBos: nil,
-        stopStrings: []
+        stopStrings: [],
+        rawPromptMarker: nil
     )
 
     /// Medium-large models ~600 MB-1.5 GB.
@@ -117,7 +126,8 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",
         userPromptTemplate: "{text}",
         addBos: nil,
-        stopStrings: []
+        stopStrings: [],
+        rawPromptMarker: nil
     )
 
     /// High-quality config for devices with ≥4GB free RAM.
@@ -128,6 +138,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",
         userPromptTemplate: "{text}",
         addBos: nil,
-        stopStrings: []
+        stopStrings: [],
+        rawPromptMarker: nil
     )
 }

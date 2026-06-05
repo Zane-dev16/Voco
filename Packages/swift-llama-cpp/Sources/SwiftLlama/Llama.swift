@@ -102,10 +102,11 @@ final actor Llama {
         try initializeCompletion(text: formattedPrompt)
     }
 
-    func initializeCompletion(text: String) throws {
+    func initializeCompletion(text: String, addBos: Bool? = nil) throws {
         print("attempting to complete \"\(text)\"")
 
-        let tokenList = model.tokenize(text: text, addBos: model.shouldAddBos(), special: true)
+        let effectiveAddBos = addBos ?? model.shouldAddBos()
+        let tokenList = model.tokenize(text: text, addBos: effectiveAddBos, special: true)
         guard tokenList.count < maxTokenCount - 4 else {
             throw LlamaError.contextSizeLimitExeeded
         }
