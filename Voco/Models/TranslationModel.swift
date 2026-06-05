@@ -81,7 +81,7 @@ extension TranslationModel {
             hfRepo: "AngelSlim/Hy-MT2-1.8B-1.25Bit-GGUF",
             quantization: "1.25-bit STQ1_0", config: .hunyuanMT,
             capability: .simulatorAndDevice, parameterCount: "1.8B",
-            sha256: "e59ec6f2f0711eb1784267a79da1dfdf1adb0faa67d7dce49713ec30ae0f6e80",
+            sha256: "fda3e7462018e35188356b2cbb0726ea18ec9c4f104c357f6232c3f780df4135",
             baseModelName: "Hy-MT2 1.8B",
             baseModelURL: "https://huggingface.co/tencent/Hy-MT2-1.8B",
             licenseName: "Tencent Hunyuan Model License (custom)",
