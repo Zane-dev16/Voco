@@ -94,13 +94,14 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         rawPromptMarker: nil
     )
 
-    /// TranslateGemma 4B — chatUserOnly with tight token limit.
+    /// TranslateGemma 4B — chatUserOnly, translation specialist.
+    /// Uses explicit "Output only" directive to prevent verbose explanations.
     static let gemmaInstruct = ModelConfiguration(
         promptStrategy: .chatUserOnly,
-        batchSize: 256, maxTokenCount: 32, threadCount: 2, threadCountBatch: 2,
+        batchSize: 256, maxTokenCount: 48, threadCount: 2, threadCountBatch: 2,
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: false,
         systemPrompt: "",
-        userPromptTemplate: "Translate to {target}: {text}",
+        userPromptTemplate: "Translate to {target}. Output only the translation, no explanations.\n{text}",
         addBos: nil,
         stopStrings: ["\n\n"],
         rawPromptMarker: nil
