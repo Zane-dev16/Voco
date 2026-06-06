@@ -307,11 +307,18 @@ final class LlamaService {
     }
 
     /// Strips `<think>...</think>` reasoning blocks from model output.
+    /// Also handles unclosed `<think>` (model cut off by maxTokenCount).
     static func stripThinkingTags(from text: String) -> String {
         var result = text
+        // Strip complete <think>...</think> blocks
         while let start = result.range(of: "<think>"),
               let end = result.range(of: "</think>", range: start.upperBound..<result.endIndex) {
             result.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        // If an unclosed <think> remains (model hit maxTokenCount mid-thought),
+        // strip everything from <think> onward
+        if let start = result.range(of: "<think>") {
+            result = String(result[..<start.lowerBound])
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -72,7 +72,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
     /// One-line directive format with <|im_end|> stop.
     static let qwenInstruct = ModelConfiguration(
         promptStrategy: .chatWithSystem,
-        batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
+        batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
         systemPrompt: "You are a translator. Output the translation and nothing else.",
         userPromptTemplate: "Translate to {target}: {text}",
