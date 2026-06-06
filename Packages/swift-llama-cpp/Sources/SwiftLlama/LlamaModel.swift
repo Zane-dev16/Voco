@@ -173,6 +173,11 @@ public final class LlamaModel {
                     // Pass a template string containing '<start_of_turn>' which
                     // llama_chat_apply_template detects as Gemma format
                     cTemplatePointer = UnsafePointer(strdup("<start_of_turn>user\n"))
+                } else if arch.hasPrefix("llama") {
+                    // llama_chat_detect_template() (llama-chat.cpp:175) requires
+                    // BOTH <|start_header_id|> AND <|end_header_id|> to detect
+                    // Llama 3 format and apply LLM_CHAT_TEMPLATE_LLAMA_3
+                    cTemplatePointer = UnsafePointer(strdup("<|start_header_id|>user<|end_header_id|>\n"))
                 }
             }
         }

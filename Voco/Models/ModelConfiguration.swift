@@ -64,7 +64,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary, notes, or explanations.",
         userPromptTemplate: "{text}",
         addBos: nil,
-        stopStrings: ["</think>"],
+        stopStrings: ["<|eot_id|>"],
         rawPromptMarker: nil
     )
 
