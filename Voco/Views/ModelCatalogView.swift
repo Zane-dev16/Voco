@@ -91,14 +91,9 @@ struct ModelCatalogView: View {
     private var catalogHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(downloadedCount) of \(TranslationModel.availableModels.count) models")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("Total: \(formattedTotalStorage)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
+                Text("\(downloadedCount) of \(TranslationModel.availableModels.count) models")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 HStack(spacing: 4) {
                     Image(systemName: "cpu.fill")
@@ -112,33 +107,12 @@ struct ModelCatalogView: View {
                 .background(Color(.tertiarySystemFill))
                 .clipShape(Capsule())
             }
-
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(.tertiarySystemFill))
-                        .frame(height: 8)
-
-                    let usedWidth = geo.size.width * storageRatio
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            LinearGradient(
-                                colors: [.blue, .blue.opacity(0.6)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: max(usedWidth, 4), height: 8)
-                        .animation(.spring(response: 0.4), value: usedWidth)
-                }
-            }
-            .frame(height: 8)
         }
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Storage: \(formattedTotalStorage) used, \(downloadedCount) of \(TranslationModel.availableModels.count) models downloaded")
+        .accessibilityLabel("\(downloadedCount) of \(TranslationModel.availableModels.count) models downloaded")
     }
 
     // MARK: - Actions
@@ -190,10 +164,6 @@ VocoLog.models.error("[ModelCatalog] Delete error: \(error)")
         TranslationModel.availableModels.filter { downloadManager.isModelDownloaded($0) }.count
     }
 
-    private var formattedTotalStorage: String {
-        ByteCountFormatter.string(fromByteCount: downloadManager.totalDiskUsage(), countStyle: .file)
-    }
-
     private var activeModelName: String {
         if let id = lifecycleManager.activeModelID,
            let model = TranslationModel.availableModels.first(where: { $0.id == id }) {
@@ -202,10 +172,6 @@ VocoLog.models.error("[ModelCatalog] Delete error: \(error)")
         return "No model active"
     }
 
-    private var storageRatio: CGFloat {
-        let baseline: Int64 = 8_000_000_000
-        return min(CGFloat(downloadManager.totalDiskUsage()) / CGFloat(baseline), 1.0)
-    }
 }
 
 // MARK: - Provider Section
