@@ -74,7 +74,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         promptStrategy: .chatWithSystem,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
-        systemPrompt: "You are a translator. Output the translation and nothing else.",
+        systemPrompt: "<think>\n</think>\nYou are a translator. Output only the translated text, nothing else.",
         userPromptTemplate: "Translate to {target}: {text}",
         addBos: nil,
         stopStrings: ["<|im_end|>"],
