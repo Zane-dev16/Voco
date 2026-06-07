@@ -258,17 +258,9 @@ private struct ModelCard: View {
                         }
                     }
 
-                    Text(model.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-
                     HStack(spacing: 6) {
                         Badge(text: model.quantization, color: model.providerColor)
                         Badge(text: model.formattedSize, color: .secondary)
-                        if model.capability == .simulatorAndDevice {
-                            Badge(text: "Simulator OK", color: .green)
-                        }
                         if model.id == "hy-mt2-1.8b-stq" {
                             Badge(text: "Recommended", color: .orange)
                         }
