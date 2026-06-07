@@ -29,3 +29,9 @@ Models/Downloaded/
 
 # Logs
 *.log
+
+# Test harness backup
+*.swift.bak
+
+# Old framework backups
+*.xcframework.old/
