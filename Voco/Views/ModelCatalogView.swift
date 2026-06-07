@@ -24,9 +24,15 @@ struct ModelCatalogView: View {
     /// Models grouped by provider.
     private var providerGroups: [(provider: String, models: [TranslationModel])] {
         let grouped = Dictionary(grouping: TranslationModel.availableModels, by: { $0.provider })
+        let providerOrder = ["Tencent", "Google"]
         return grouped
             .map { (provider: $0.key, models: $0.value.sorted { $0.fileSizeBytes < $1.fileSizeBytes }) }
-            .sorted { $0.provider < $1.provider }
+            .sorted { a, b in
+                let aIdx = providerOrder.firstIndex(of: a.provider) ?? providerOrder.count
+                let bIdx = providerOrder.firstIndex(of: b.provider) ?? providerOrder.count
+                if aIdx != bIdx { return aIdx < bIdx }
+                return a.provider < b.provider
+            }
     }
 
     var body: some View {
@@ -262,6 +268,9 @@ private struct ModelCard: View {
                         Badge(text: model.formattedSize, color: .secondary)
                         if model.capability == .simulatorAndDevice {
                             Badge(text: "Simulator OK", color: .green)
+                        }
+                        if model.id == "hy-mt2-1.8b-stq" {
+                            Badge(text: "Recommended", color: .orange)
                         }
                     }
                 }
