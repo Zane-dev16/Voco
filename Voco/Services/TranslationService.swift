@@ -5,7 +5,7 @@ import OSLog
 
 /// Manages GGUF model loading and text generation via llama.cpp using SwiftLlama.
 ///
-/// Works on both device and simulator by using prebuilt llama.cpp xcframework binaries.
+/// Orchestrates PromptBuilder + OutputProcessor + LlamaEngine for translation.
 @Observable
 @MainActor
 final class TranslationService {
@@ -68,41 +68,27 @@ final class TranslationService {
             throw LlamaError.unsupportedLanguage(targetLanguage)
         }
 
-        let sampling = samplingConfig(from: model.config)
+        let sampling = PromptBuilder.samplingConfig(from: model.config)
 
         let rawOutput: String
         switch model.config.promptStrategy {
         case .raw:
-            let resolvedTarget: String
-            let resolvedSource: String
-            if model.config == .nllbTranslate {
-                resolvedSource = Language.find(byCode: sourceLanguage)?.code ?? "en"
-                resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.code ?? "es"
-            } else {
-                resolvedSource = sourceLanguage
-                resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.hunyuanTargetName ?? targetLanguage
-            }
-            let rawPrompt = model.config.userPromptTemplate
-                .replacingOccurrences(of: "{source}", with: resolvedSource)
-                .replacingOccurrences(of: "{source_code}", with: resolvedSource)
-                .replacingOccurrences(of: "{target}", with: resolvedTarget)
-                .replacingOccurrences(of: "{target_code}", with: resolvedTarget)
-                .replacingOccurrences(of: "{text}", with: text)
+            let rawPrompt = PromptBuilder.formatRawPrompt(
+                text: text,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage,
+                config: model.config
+            )
             var output = ""
             for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos) { output += token }
-            // Strip prompt echo using rawPromptMarker
-            if let marker = model.config.rawPromptMarker, let range = output.range(of: marker) {
-                rawOutput = String(output[range.upperBound...])
-            } else {
-                rawOutput = output
-            }
+            rawOutput = OutputProcessor.stripPromptEcho(output, marker: model.config.rawPromptMarker)
 
         case .chatUserOnly, .chatWithSystem:
-            let messages = buildMessages(text: text, source: sourceLanguage, target: targetLanguage, config: model.config)
-            rawOutput = Self.stripThinkingTags(from: try await service.respond(to: messages, samplingConfig: sampling))
+            let messages = PromptBuilder.buildMessages(text: text, source: sourceLanguage, target: targetLanguage, config: model.config)
+            rawOutput = OutputProcessor.stripThinkingTags(from: try await service.respond(to: messages, samplingConfig: sampling))
         }
 
-        return truncateAtStopStrings(rawOutput, config: model.config)
+        return OutputProcessor.truncateAtStopStrings(rawOutput, stopStrings: model.config.stopStrings)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -118,15 +104,15 @@ final class TranslationService {
             }
         }
 
-        let sampling = samplingConfig(from: model.config)
+        let sampling = PromptBuilder.samplingConfig(from: model.config)
 
         if model.config.promptStrategy == .raw {
-            // Resolve the target language to its model-facing name
-            let resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.hunyuanTargetName ?? targetLanguage
-            let rawPrompt = model.config.userPromptTemplate
-                .replacingOccurrences(of: "{source}", with: sourceLanguage)
-                .replacingOccurrences(of: "{target}", with: resolvedTarget)
-                .replacingOccurrences(of: "{text}", with: text)
+            let rawPrompt = PromptBuilder.formatRawPromptForStream(
+                text: text,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage,
+                config: model.config
+            )
 
             let stopStrings = model.config.stopStrings
             let marker = model.config.rawPromptMarker
@@ -197,7 +183,7 @@ final class TranslationService {
         }
 
         // Standard chat-template path
-        let messages = buildMessages(
+        let messages = PromptBuilder.buildMessages(
             text: text,
             source: sourceLanguage,
             target: targetLanguage,
@@ -222,7 +208,7 @@ final class TranslationService {
                                 if buffer.contains(stop) {
                                     if let range = buffer.range(of: stop) {
                                         let before = String(buffer[..<range.lowerBound])
-                                        let out = hasYielded ? before : before.trimmingLeadingNewlines()
+                                        let out = hasYielded ? before : OutputProcessor.trimmingLeadingNewlines(before)
                                         if !out.isEmpty && !inThinkBlock {
                                             continuation.yield(out)
                                             hasYielded = true
@@ -237,7 +223,7 @@ final class TranslationService {
                         if !inThinkBlock {
                             if let range = buffer.range(of: "<think>") {
                                 let before = String(buffer[..<range.lowerBound])
-                                let out = hasYielded ? before : before.trimmingLeadingNewlines()
+                                let out = hasYielded ? before : OutputProcessor.trimmingLeadingNewlines(before)
                                 if !out.isEmpty {
                                     continuation.yield(out)
                                     hasYielded = true
@@ -245,7 +231,7 @@ final class TranslationService {
                                 buffer = ""
                                 inThinkBlock = true
                             } else if buffer.count > 20 {
-                                let out = hasYielded ? buffer : buffer.trimmingLeadingNewlines()
+                                let out = hasYielded ? buffer : OutputProcessor.trimmingLeadingNewlines(buffer)
                                 if !out.isEmpty {
                                     continuation.yield(out)
                                     hasYielded = true
@@ -264,7 +250,7 @@ final class TranslationService {
                         }
                     }
                     if !buffer.isEmpty && !inThinkBlock && !stopped {
-                        let out = hasYielded ? buffer : buffer.trimmingLeadingNewlines()
+                        let out = hasYielded ? buffer : OutputProcessor.trimmingLeadingNewlines(buffer)
                         if !out.isEmpty {
                             continuation.yield(out)
                         }
@@ -275,69 +261,6 @@ final class TranslationService {
                 }
             }
         }
-    }
-
-    // MARK: - Private
-
-    private func buildMessages(
-        text: String,
-        source: String,
-        target: String,
-        config: ModelConfiguration
-    ) -> [LlamaChatMessage] {
-        let userPrompt = config.userPromptTemplate
-            .replacingOccurrences(of: "{source}", with: source)
-            .replacingOccurrences(of: "{target}", with: target)
-            .replacingOccurrences(of: "{text}", with: text)
-        // Gemma-family models: chatUserOnly — no system role
-        if config.promptStrategy == .chatUserOnly {
-            return [LlamaChatMessage(role: .user, content: userPrompt)]
-        }
-        let sys = config.systemPrompt.replacingOccurrences(of: "{target}", with: target)
-        return [LlamaChatMessage(role: .system, content: sys), LlamaChatMessage(role: .user, content: userPrompt)]
-    }
-
-    private func samplingConfig(from config: ModelConfiguration) -> LlamaSamplingConfig {
-        LlamaSamplingConfig(
-            temperature: config.temperature,
-            seed: config.seed,
-            topP: config.topP,
-            topK: config.topK
-        )
-    }
-
-    /// Strips `<think>...</think>` reasoning blocks from model output.
-    /// Also handles unclosed `<think>` (model cut off by maxTokenCount).
-    static func stripThinkingTags(from text: String) -> String {
-        var result = text
-        // Strip complete <think>...</think> blocks
-        while let start = result.range(of: "<think>"),
-              let end = result.range(of: "</think>", range: start.upperBound..<result.endIndex) {
-            result.removeSubrange(start.lowerBound..<end.upperBound)
-        }
-        // If an unclosed <think> remains (model hit maxTokenCount mid-thought),
-        // strip everything from <think> onward
-        if let start = result.range(of: "<think>") {
-            result = String(result[..<start.lowerBound])
-        }
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Truncates output at the first occurrence of any configured stop string.
-    /// Returns the text up to (but not including) the stop string, or the original
-    /// text if no stop string is found.
-    private func truncateAtStopStrings(_ text: String, config: ModelConfiguration) -> String {
-        guard !config.stopStrings.isEmpty else { return text }
-        var earliestRange: Range<String.Index>?
-        for stop in config.stopStrings {
-            if let range = text.range(of: stop) {
-                if earliestRange == nil || range.lowerBound < earliestRange!.lowerBound {
-                    earliestRange = range
-                }
-            }
-        }
-        guard let range = earliestRange else { return text }
-        return String(text[..<range.lowerBound])
     }
 }
 
@@ -354,19 +277,5 @@ enum LlamaError: LocalizedError {
         case .unsupportedLanguage(let lang):
             return "The language \"\(lang)\" is not supported by the current model."
         }
-    }
-}
-
-// MARK: - String Helpers
-
-private extension String {
-    /// Strips leading newlines and whitespace from the start of a string.
-    /// Used to remove ChatML template newlines from streaming output.
-    func trimmingLeadingNewlines() -> String {
-        var result = self
-        while result.hasPrefix("\n") || result.hasPrefix("\r") {
-            result = String(result.dropFirst())
-        }
-        return result.trimmingCharacters(in: .whitespaces)
     }
 }
