@@ -300,19 +300,11 @@ struct SettingsView: View {
 
     private func selectModel(_ model: TranslationModel) {
         guard model.id != selectedModelID else { return }
-        // Cancel any in-flight load to prevent overlapping model loads
         loadTask?.cancel()
         selectedModelID = model.id
         guard downloadManager.isModelDownloaded(model) else { return }
         loadTask = Task {
-            // Sequentially deactivate old model, then activate new one.
-            // activate() also deactivates internally, but awaiting explicitly
-            // avoids the race where both models briefly occupy RAM.
-            if lifecycleManager.activeModelID != nil {
-                await lifecycleManager.deactivate()
-            }
-            guard !Task.isCancelled else { return }
-            try? await lifecycleManager.activate(model)
+            try? await lifecycleManager.switchTo(model)
         }
     }
 

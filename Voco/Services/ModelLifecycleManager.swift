@@ -28,6 +28,15 @@ final class ModelLifecycleManager {
     private let inferenceService = TranslationService()
     private let downloadManager = ModelManagerService()
 
+    /// Switch to a new model — deactivate the current one first, then activate.
+    /// Centralises the deactivate→activate sequence that callers otherwise duplicate.
+    func switchTo(_ model: TranslationModel) async throws {
+        if activeModelID != nil {
+            await deactivate()
+        }
+        try await activate(model)
+    }
+
     /// Activate a local model — download if needed, then load into memory.
     func activate(_ model: TranslationModel) async throws {
         guard model.id != activeModelID else { return }

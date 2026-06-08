@@ -127,7 +127,6 @@ struct ModelCatalogView: View {
 
     private func selectModel(_ model: TranslationModel) {
         guard model.id != selectedModelID else { return }
-        // Cancel any in-flight load to prevent overlapping model loads
         loadTask?.cancel()
         selectedModelID = model.id
 
@@ -137,12 +136,7 @@ struct ModelCatalogView: View {
         }
 
         loadTask = Task {
-            // Sequentially deactivate old model, then activate new one
-            if lifecycleManager.activeModelID != nil {
-                await lifecycleManager.deactivate()
-            }
-            guard !Task.isCancelled else { return }
-            try? await lifecycleManager.activate(model)
+            try? await lifecycleManager.switchTo(model)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 lastActivatedModel = model.displayName
