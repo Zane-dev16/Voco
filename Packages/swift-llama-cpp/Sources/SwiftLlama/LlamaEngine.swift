@@ -1,5 +1,5 @@
 //
-//  LlamaService.swift
+//  LlamaEngine.swift
 //  PrivateAI
 //
 //  Created by Piotr Gorzelany on 24/01/2024.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-public final actor LlamaService {
+public final actor LlamaEngine {
 
     // MARK: Properties
     private var llama: Llama?

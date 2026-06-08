@@ -123,7 +123,7 @@ struct LlamaTypedGrammarTests {
 
     @Test("Streaming typed JSON for Person produces valid JSON")
     func testTypedStreamingPerson() async throws {
-        let service = LlamaService(modelUrl: .llama1B, config: .init(batchSize: 128, maxTokenCount: 4096))
+        let service = LlamaEngine(modelUrl: .llama1B, config: .init(batchSize: 128, maxTokenCount: 4096))
         let messages = [
             LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only with JSON that matches the requested schema."),
             LlamaChatMessage(role: .user, content: "Return a person with name, age, and optionally a city")

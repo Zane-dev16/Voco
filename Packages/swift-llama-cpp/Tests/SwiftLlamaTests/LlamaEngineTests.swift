@@ -1,984 +1,501 @@
-//
-//  LlamaServiceTests.swift
-//  LlamaSwift
-//
-//  Created by Piotr Gorzelany on 22/10/2024.
-//
-
-import Testing
-import Foundation
-import OSLog
-@testable import SwiftLlama
-
-struct LlamaServiceTests {
-
-    // MARK: - Test Configuration
-    
-    private struct TestConfig {
-        static let contextLength: UInt32 = 16384
-        static let batchSize: UInt32 = 1024
-        static let performanceTargetTokens = 500
-        static let jsonTestMaxTokens = 100
-        // Local performance baselines captured on this machine (detect regressions)
-        static let minimumTokensPerSecond: Double = 20.0
-        static let testSeed: UInt32 = 42
-        static let shortTestTokens = 50
-        static let grammarPerformanceTokens = 20
-        static let grammarMinimumTokensPerSecond: Double = 3.0
-        static let deterministicTokens = 100
-        static let deterministicMinCharacters = 200
-    }
-    
-    // MARK: - Properties
-    
-    private var llamaService: LlamaService!
-    private let logger = Logger(subsystem: "SwiftLlamaTests", category: "LlamaServiceTests")
-    
-    // MARK: - Setup and Teardown
-
-    init() {
-        llamaService = createLlamaService()
-    }
-
-    // MARK: - Performance Tests
-
-    @Test("Streaming performance baseline")
-    func testStreamCompletionPerformance() async throws {
-        // Given
-        let messages = createStoryMessages()
-        let samplingConfig = createPerformanceSamplingConfig()
-        
-        // When
-        let result = try await measureTokenGenerationPerformance(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            targetTokens: TestConfig.performanceTargetTokens
-        )
-        
-        // Then
-        #expect(result.tokenCount == TestConfig.performanceTargetTokens)
-        // Local baseline; intent is regression tracking, not strict perf
-        #expect(result.tokensPerSecond > TestConfig.minimumTokensPerSecond)
-        
-        // Log performance metrics
-        print("PERF_STREAM tokens=\(result.tokenCount) tps=\(String(format: "%.2f", result.tokensPerSecond))")
-        logger.info("=== Performance Test Results ===")
-        logger.info("Generated \(result.tokenCount) tokens")
-        logger.info("Speed: \(String(format: "%.2f", result.tokensPerSecond), privacy: .public) tokens/second")
-        logger.info("Generated text preview: \(String(result.generatedText.prefix(100)), privacy: .public)...")
-    }
-    
-    @Test("Grammar generation performance baseline")
-    func testGrammarGenerationPerformance() async throws {
-        // Given
-        let messages = createJSONMessages()
-        let samplingConfig = try createJSONSamplingConfig()
-        
-        // When
-        let result = try await measureTokenGenerationPerformance(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            targetTokens: TestConfig.grammarPerformanceTokens
-        )
-        
-        // Then
-        // Baseline: ensure some progress and modest throughput to track regressions
-        #expect(result.tokenCount >= 10)
-        #expect(result.tokensPerSecond > TestConfig.grammarMinimumTokensPerSecond)
-        
-        // Note: performance harness may cut mid-JSON; don't validate structure here
-        
-        // Log performance metrics
-        print("PERF_GRAMMAR tokens=\(result.tokenCount) tps=\(String(format: "%.2f", result.tokensPerSecond))")
-        logger.info("=== Grammar Generation Performance ===")
-        logger.info("Generated \(result.tokenCount) tokens")
-        logger.info("Speed: \(String(format: "%.2f", result.tokensPerSecond), privacy: .public) tokens/second")
-        logger.info("Valid JSON generated: \(result.generatedText.prefix(100), privacy: .public)...")
-    }
-
-    // MARK: - Grammar Tests
-    
-    @Test("JSON object generation with grammar")
-    func testJSONGenerationWithGrammar() async throws {
-        // Given
-        let messages = createJSONMessages()
-        let samplingConfig = try createJSONSamplingConfig()
-        
-        // When
-        let generatedText = try await generateJSONWithGrammar(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            maxTokens: TestConfig.jsonTestMaxTokens
-        )
-        
-        // Then
-        #expect(!generatedText.isEmpty)
-        
-        let jsonObject = try validateJSON(generatedText)
-        
-        // Log results
-        logger.info("=== JSON Generation Test Results ===")
-        logger.info("Generated JSON: \(generatedText, privacy: .public)")
-        logger.info("Parsed object keys: \(Array(jsonObject.keys), privacy: .public)")
-        
-        // Verify structure (optional - could be more specific based on requirements)
-        #expect(jsonObject.count > 0)
-    }
-    
-    @Test("JSON array generation with grammar")
-    func testJSONArrayGenerationWithGrammar() async throws {
-        // Given
-        let messages = createJSONArrayMessages()
-        let samplingConfig = try createJSONArraySamplingConfig()
-        
-        // When
-        let generatedText = try await generateJSONWithGrammar(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            maxTokens: TestConfig.jsonTestMaxTokens
-        )
-        
-        // Then
-        #expect(!generatedText.isEmpty)
-        
-        let jsonArray = try validateJSONArray(generatedText)
-        
-        // Log results
-        logger.info("=== JSON Array Generation Test Results ===")
-        logger.info("Generated JSON Array: \(generatedText, privacy: .public)")
-        logger.info("Array contains \(jsonArray.count) elements")
-        if !jsonArray.isEmpty {
-            logger.info("First element type: \(String(describing: type(of: jsonArray[0])), privacy: .public)")
-        }
-        
-        // Verify structure
-        #expect(jsonArray.count >= 0)
-    }
-
-    @Test("JSON string array generation and parsing to [String]")
-    func testJSONStringArrayGenerationAndParsing() async throws {
-        // Given
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in valid JSON array format."),
-            LlamaChatMessage(role: .user, content: "Generate a JSON array of 5 programming languages as strings.")
-        ]
-        let samplingConfig = try createJSONStringArraySamplingConfig()
-
-        // When
-        let generatedText = try await generateJSONWithGrammar(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            maxTokens: TestConfig.jsonTestMaxTokens
-        )
-
-        // Then
-        let array = try validateStringArray(generatedText)
-        #expect(!array.isEmpty)
-        // Basic sanity: ensure they look like single words or known languages
-        #expect(array.count == 5)
-    }
-    
-    // MARK: - Sampling Configuration Tests
-    
-    @Test("Determinism: same seed -> identical output")
-    func testSeedReproducibility() async throws {
-        // Given
-        let messages = createSimpleMessages()
-        let seed: UInt32 = 12345
-        let samplingConfig = LlamaSamplingConfig(temperature: 0.1, seed: seed)
-
-        // When - Generate same content twice with same seed
-        let result1 = try await generateLimitedText(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            maxTokens: TestConfig.shortTestTokens
-        )
-
-        let result2 = try await generateLimitedText(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            maxTokens: TestConfig.shortTestTokens
-        )
-        
-        // Then
-        #expect(result1 == result2)
-        
-        logger.info("=== Reproducibility Test Results ===")
-        logger.info("Output 1: \(result1, privacy: .public)")
-        logger.info("Output 2: \(result2, privacy: .public)")
-    }
-
-    @Test("Deterministic run produces at least 200 characters")
-    func testDeterministicMinimumCharacterCount() async throws {
-        // Given: use the longer story prompt and fixed seed
-        let messages = createStoryMessages()
-        let samplingConfig = LlamaSamplingConfig(temperature: 0.1, seed: TestConfig.testSeed)
-
-        // When
-        let result = try await generateLimitedText(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            maxTokens: TestConfig.deterministicTokens
-        )
-
-        // Then
-        #expect(result.count >= TestConfig.deterministicMinCharacters)
-        logger.info("Deterministic length: \(result.count, privacy: .public) chars")
-    }
-
-    @Test("Short story matches deterministic baseline")
-    func testShortStoryMatchesBaseline() async throws {
-        // Given: fixed prompt and seed/temperature for determinism
-        let baseline = "Whiskers, a sleek and agile feline, spent her Martian days lounging in the low-gravity sunbeams that streamed through the transparent dome of her habitat module. At night, she'd prowl the dusty terrain outside, chasing after the occasional Martian dust bunny as she explored the barren landscape of Olympus Mons, the largest volcano on the Red Planet."
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant."),
-            LlamaChatMessage(role: .user, content: "Write a concise two-sentence story about a cat living on Mars. Be specific.")
-        ]
-        let cfg = LlamaSamplingConfig(temperature: 0.1, seed: TestConfig.testSeed)
-
-        // When
-        let generated = try await generateLimitedText(messages: messages, samplingConfig: cfg, maxTokens: 160)
-
-        // Then: compare after light whitespace normalization to avoid incidental spacing differences
-        func normalize(_ s: String) -> String {
-            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            let squashed = trimmed.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            return squashed
-        }
-        #expect(normalize(generated) == normalize(baseline))
-    }
-
-    // NOTE: The baseline above was captured by a temporary print-only test and then inlined.
-    
-    @Test("Temperature impacts output")
-    func testTemperatureEffectsOnOutput() async throws {
-        // Given
-        let messages = createSimpleMessages()
-        let temperatureValues: [Float] = [0.0, 0.7, 1.3, 2.0]
-        var successes = 0
-        
-        logger.info("=== Temperature Effects Test Results ===")
-        logger.info("Testing temperatures from 0.0 to 2.0 in 0.1 intervals...")
-        
-        // When - Test each temperature value
-        for temperature in temperatureValues {
-            let samplingConfig = LlamaSamplingConfig(
-                temperature: temperature,
-                seed: TestConfig.testSeed
-            )
-            
-            do {
-                let result = try await generateLimitedText(
-                    messages: messages,
-                    samplingConfig: samplingConfig,
-                    maxTokens: 10
-                )
-                if !result.isEmpty { successes += 1 }
-            } catch {
-                let formattedTemp = String(format: "%.1f", temperature)
-                Issue.record("Temperature \(formattedTemp) failed with error: \(error)")
-            }
-        }
-        
-        // At least one temperature setting should yield output
-        #expect(successes >= 1)
-    }
-    
-    @Test("Top-K sampling produces output")
-    func testTopKSamplingConstraints() async throws {
-        // Given
-        let messages = createSimpleMessages()
-        let topKConfig = LlamaSamplingConfig(
-            temperature: 0.8,
-            seed: TestConfig.testSeed,
-            topK: 5 // Very restrictive top-k
-        )
-        
-        // When
-        let result = try await generateLimitedText(
-            messages: messages,
-            samplingConfig: topKConfig,
-            maxTokens: TestConfig.shortTestTokens
-        )
-        
-        // Then
-        #expect(!result.isEmpty)
-        
-        logger.info("=== Top-K Sampling Test Results ===")
-        logger.info("Generated with top-K=5: \(result, privacy: .public)")
-    }
-
-    // MARK: - respond<T: Codable>() Tests
-    
-    private struct Person: Codable, Equatable {
-        let name: String
-        let age: Int
-        let city: String?
-    }
-    
-    @Test("Typed respond() produces decodable JSON object")
-    func testRespondProducesDecodableObject() async throws {
-        // Given
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in JSON matching the schema."),
-            LlamaChatMessage(role: .user, content: "Return a person with name 'Ada', age 36, city 'London'.")
-        ]
-        
-        // When
-        let person = try await llamaService.respond(to: messages, generating: Person.self)
-        
-        // Then
-        #expect(!person.name.isEmpty)
-        #expect(person.age >= 0)
-    }
-
-    @Test("Typed respond() produces decodable array of strings")
-    func testRespondProducesArrayOfStrings() async throws {
-        // Given
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in a JSON array of strings."),
-            LlamaChatMessage(role: .user, content: "Return an array of 3 fruits as strings.")
-        ]
-        
-        // When
-        let fruits = try await llamaService.respond(to: messages, generating: [String].self)
-        
-        // Then
-        #expect(!fruits.isEmpty)
-        #expect(fruits.count >= 3)
-    }
-    
-    // MARK: - respond(messages:samplingConfig:) Tests
-    
-    @Test("Plain respond() returns non-empty text")
-    func testRespondTextNonEmpty() async throws {
-        // Given: small token budget to keep the test bounded
-        let service = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 80, useGPU: false)
-        )
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant."),
-            LlamaChatMessage(role: .user, content: "Write a single short sentence (max 20 words).")
-        ]
-        let cfg = LlamaSamplingConfig(temperature: 0.3, seed: TestConfig.testSeed)
-
-        // When
-        let text = try await service.respond(to: messages, samplingConfig: cfg)
-
-        // Then
-        #expect(!text.isEmpty)
-    }
-
-    @Test("Plain respond() is deterministic with same seed")
-    func testRespondDeterminismWithSameSeed() async throws {
-        // Given: two fresh services and identical config for determinism
-        let cfg = LlamaSamplingConfig(temperature: 0.1, seed: TestConfig.testSeed)
-        let serviceA = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 80, useGPU: false)
-        )
-        let serviceB = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 80, useGPU: false)
-        )
-        let messages = createSimpleMessages()
-
-        // When
-        let out1 = try await serviceA.respond(to: messages, samplingConfig: cfg)
-        let out2 = try await serviceB.respond(to: messages, samplingConfig: cfg)
-
-        // Then
-        #expect(out1 == out2)
-    }
-
-    // MARK: - json_array_strings.gbnf grammar with respond()
-
-    @Test("JSONStringArray grammar via respond() decodes to [String]")
-    func testJSONStringArrayRespondParsesToArray() async throws {
-        // Given
-        let samplingConfig = try createJSONStringArraySamplingConfig()
-        let service = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 120, useGPU: false)
-        )
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in a JSON array of strings."),
-            LlamaChatMessage(role: .user, content: "Generate a JSON array of 4 animals as strings.")
-        ]
-
-        // When
-        let generatedText = try await service.respond(to: messages, samplingConfig: samplingConfig)
-
-        // Then
-        let array = try validateStringArray(generatedText)
-        #expect(array.count == 4)
-    }
-
-    @Test("JSONStringArray grammar via respond() is deterministic with same seed")
-    func testJSONStringArrayRespondDeterminism() async throws {
-        // Given
-        let samplingConfig = try createJSONStringArraySamplingConfig()
-        let serviceA = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 120, useGPU: false)
-        )
-        let serviceB = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 120, useGPU: false)
-        )
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in a JSON array of strings."),
-            LlamaChatMessage(role: .user, content: "Generate a JSON array of 3 programming languages as strings.")
-        ]
-
-        // When
-        let out1 = try await serviceA.respond(to: messages, samplingConfig: samplingConfig)
-        let out2 = try await serviceB.respond(to: messages, samplingConfig: samplingConfig)
-
-        // Then
-        #expect(out1 == out2)
-        let arr1 = try validateStringArray(out1)
-        let arr2 = try validateStringArray(out2)
-        #expect(arr1 == arr2)
-    }
-
-    @Test("JSONStringArray grammar remains valid at high temperature via respond()")
-    func testJSONStringArrayHighTemperatureValidity() async throws {
-        // Given: high temperature but constrained by grammar should still yield valid JSON array of strings
-        let grammarString = try loadJSONStringArrayGrammar()
-        let grammarConfig = LlamaGrammarConfig(grammar: grammarString, grammarRoot: "root")
-        let samplingConfig = LlamaSamplingConfig(
-            temperature: 1.8,
-            seed: TestConfig.testSeed,
-            grammarConfig: grammarConfig
-        )
-        let service = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 120, useGPU: false)
-        )
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in a JSON array of strings."),
-            LlamaChatMessage(role: .user, content: "Generate a short JSON array of lowercase fruit names as strings.")
-        ]
-
-        // When
-        let generatedText = try await service.respond(to: messages, samplingConfig: samplingConfig)
-
-        // Then: ensure it's a valid JSON array of strings (size may vary)
-        let array = try validateStringArray(generatedText)
-        #expect(!array.isEmpty)
-    }
-    
-    @Test("Repetition penalty produces output")
-    func testRepetitionPenaltyConfiguration() async throws {
-        // Given
-        let messages = createRepetitivePromptMessages()
-        let penaltyConfig = LlamaRepetitionPenaltyConfig(
-            lastN: 20,
-            repeatPenalty: 1.3,
-            freqPenalty: 0.1,
-            presentPenalty: 0.1
-        )
-        let samplingConfig = LlamaSamplingConfig(
-            temperature: 0.8,
-            seed: TestConfig.testSeed,
-            repetitionPenaltyConfig: penaltyConfig
-        )
-        
-        // When
-        let result = try await generateLimitedText(
-            messages: messages,
-            samplingConfig: samplingConfig,
-            maxTokens: TestConfig.shortTestTokens
-        )
-        
-        // Then
-        #expect(!result.isEmpty)
-        
-        logger.info("=== Repetition Penalty Test Results ===")
-        logger.info("Generated with penalties: \(result, privacy: .public)")
-    }
-    
-    // MARK: - Edge Case Tests
-    
-    @Test("Empty messages are rejected")
-    func testEmptyMessageHandling() async throws {
-        // Given
-        let emptyMessages: [LlamaChatMessage] = []
-        let samplingConfig = createPerformanceSamplingConfig()
-        
-        // When/Then
-        do {
-            _ = try await llamaService.streamCompletion(of: emptyMessages, samplingConfig: samplingConfig)
-            Issue.record("Should throw an error for empty messages")
-        } catch {
-            // Expected to fail - empty messages should not be allowed
-            logger.info("=== Empty Message Test Results ===")
-            logger.info("Correctly failed with error: \(error)")
-        }
-    }
-    
-    @Test("Handles very short prompts")
-    func testVeryShortPromptHandling() async throws {
-        // Given
-        let shortMessages = [
-            LlamaChatMessage(role: .user, content: "Hi")
-        ]
-        let samplingConfig = createPerformanceSamplingConfig()
-        
-        // When
-        let result = try await generateLimitedText(
-            messages: shortMessages,
-            samplingConfig: samplingConfig,
-            maxTokens: 20
-        )
-        
-        // Then
-        #expect(!result.isEmpty)
-        
-        logger.info("=== Short Prompt Test Results ===")
-        logger.info("Response to 'Hi': \(result, privacy: .public)")
-    }
-    
-    @Test("Handles Unicode and special characters")
-    func testUnicodeAndSpecialCharacters() async throws {
-        // Given
-        let unicodeMessages = [
-            LlamaChatMessage(role: .user, content: "Here are some emojis: 🎯🚀🔥 and Unicode: αβγδε français español 中文. What do you say?")
-        ]
-        let samplingConfig = createPerformanceSamplingConfig()
-        
-        // When
-        let result = try await generateLimitedText(
-            messages: unicodeMessages,
-            samplingConfig: samplingConfig,
-            maxTokens: TestConfig.shortTestTokens
-        )
-        
-        // Then
-        #expect(!result.isEmpty)
-        
-        logger.info("=== Unicode Test Results ===")
-        logger.info("Unicode response: \(result, privacy: .public)")
-    }
-    
-    // MARK: - Cancellation Tests
-    
-    @Test("Streaming can be cancelled")
-    func testStreamCancellation() async throws {
-        // Given
-        let messages = createStoryMessages()
-        let samplingConfig = createPerformanceSamplingConfig()
-        
-        // When
-        let stream = try await llamaService.streamCompletion(of: messages, samplingConfig: samplingConfig)
-        var tokenCount = 0
-        var generatedText = ""
-        
-        // Cancel after generating a few tokens
-        for try await token in stream {
-            generatedText += token
-            tokenCount += 1
-            
-            if tokenCount >= 10 {
-                await llamaService.stopCompletion()
-                break
-            }
-        }
-        
-        // Then
-        #expect(tokenCount > 0)
-        #expect(tokenCount <= 30)
-        
-        logger.info("=== Cancellation Test Results ===")
-        logger.info("Generated \(tokenCount) tokens before cancellation: \(generatedText, privacy: .public)")
-    }
-
-    // MARK: - Golden Deterministic Story
-
-    @Test("Long deterministic story baseline")
-    func testLongDeterministicStoryBaseline() async throws {
-        // Given: deterministic CPU-only config and fixed prompt
-        let service = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 2048, useGPU: false)
-        )
-
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant."),
-            LlamaChatMessage(role: .user, content: "Write a vivid short story (3-4 paragraphs) about a time traveler visiting ancient Alexandria, focusing on the Library and the harbor. Keep it under 350 words.")
-        ]
-        let cfg = LlamaSamplingConfig(temperature: 0.0, seed: 12345, topP: 1.0, topK: nil, minKeep: 1)
-
-        // When
-        let story = try await generateText(
-            using: service,
-            messages: messages,
-            samplingConfig: cfg,
-            maxTokens: 240
-        )
-
-        // Always print the story delimited for easy copy-paste
-        print("LLAMA_GENERATED_STORY_START\n\(story)\nLLAMA_GENERATED_STORY_END")
-
-        // Baseline captured locally on this machine using the same model + binary.
-        let baseline = """
-        As the sun set over ancient Alexandria, a lone figure emerged from the shadows. A time traveler, with eyes that shone like stars in the night sky, stepped onto the bustling streets of this fabled city. The air was thick with the scent of papyrus and olive oil as he made his way to the Great Library of Alexandria. The towering structure loomed before him, its marble columns glinting like a thousand tiny diamonds in the fading light.
-
-        As he pushed open the doors, a warm golden glow enveloped him, illuminating rows upon rows of dusty scrolls and ancient texts. The time traveler wandered through the stacks, running his fingers over the worn leather bindings, feeling the weight of centuries of knowledge within. He paused before a shelf dedicated to the works of Homer, his eyes scanning the yellowed pages as if searching for a specific verse.
-
-        The sound of gulls crying overhead gave way to the murmur of merchants haggling over goods at the harbor. The time traveler's gaze followed the throngs of ships and sailors, their vessels bearing exotic spices from distant lands. He watched as a young apprentice, his eyes shining with excitement, carefully unwrapped a shipment of pome
-        """
-        #expect(story == baseline)
-    }
-
-    @Test("Long deterministic token baseline")
-    func testLongDeterministicTokenBaseline() async throws {
-        // Given: deterministic CPU-only config and fixed prompt
-        let service = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: 2048, useGPU: false)
-        )
-
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant."),
-            LlamaChatMessage(role: .user, content: "Write a vivid short story (3-4 paragraphs) about a time traveler visiting ancient Alexandria, focusing on the Library and the harbor. Keep it under 350 words.")
-        ]
-        let cfg = LlamaSamplingConfig(temperature: 0.0, seed: 12345, topP: 1.0, topK: nil, minKeep: 1)
-
-        // When: run generation but also collect token ids from the underlying Llama actor
-        let stream = try await service.streamCompletion(of: messages, samplingConfig: cfg)
-        var out = ""
-        var count = 0
-        for try await token in stream where count < 240 {
-            out += token
-            count += 1
-        }
-
-        // We need the token ids, which are tracked by Llama
-        // Re-process the same prompt through a fresh Llama to retrieve tokens deterministically
-        let llama = try Llama(modelPath: URL.llama1B.path, config: .init(batchSize: 256, maxTokenCount: 2048, useGPU: false))
-        try await llama.initializeCompletion(messages: messages)
-        await llama.updateSamplingConfig(cfg)
-        var tokens: [Int32] = []
-        generation: while await llama.currentTokenPosition < llama.maxTokenCount && tokens.count < 240 {
-            let result = try await llama.generateNextToken()
-            switch result {
-            case .token:
-                tokens = await llama.getProcessedTokenIds()
-            case .endOfString:
-                break generation
-            }
-        }
-
-        // Print tokens for capture
-        print("LLAMA_GENERATED_TOKENS_START\n\(tokens)\nLLAMA_GENERATED_TOKENS_END")
-
-        // Then: token baseline captured on this machine for strict reproducibility
-        let tokenBaseline: [Int32] = [128006, 9125, 128007, 271, 2675, 527, 264, 11190, 18328, 13, 128009, 128006, 882, 128007, 271, 8144, 264, 43120, 2875, 3446, 320, 18, 12, 19, 43743, 8, 922, 264, 892, 63865, 17136, 14154, 57233, 11, 21760, 389, 279, 11896, 323, 279, 57511, 13, 13969, 433, 1234, 220, 8652, 4339, 13, 128009, 128006, 78191, 128007, 271, 2170, 279, 7160, 743, 927, 14154, 57233, 11, 264, 47766, 7216, 22763, 505, 279, 35612, 13, 362, 892, 63865, 11, 449, 6548, 430, 559, 606, 1093, 9958, 304, 279, 3814, 13180, 11, 25319, 8800, 279, 90256, 14708, 315, 420, 282, 2364, 3363, 13, 578, 3805, 574, 12314, 449, 279, 41466, 315, 281, 90294, 323, 33213, 5707, 439, 568, 1903, 813, 1648, 311, 279, 8681, 11896, 315, 57233, 13, 578, 87794, 6070, 781, 25111, 1603, 1461, 11, 1202, 42390, 8310, 2840, 396, 287, 1093, 264, 16579, 13987, 49151, 304, 279, 59617, 3177, 382, 2170, 568, 15753, 1825, 279, 14365, 11, 264, 8369, 21411, 37066, 54285, 291, 1461, 11, 44087, 1113, 7123, 5304, 7123, 315, 77973, 79664, 323, 14154, 22755, 13, 578, 892, 63865, 82294, 1555, 279, 41050, 11, 4401, 813, 19779, 927, 279, 24634, 18012, 36800, 11, 8430, 279, 4785, 315, 24552, 315, 6677, 2949, 13, 1283, 35595, 1603, 264, 28745, 12514, 311, 279, 4375, 315, 66805, 11, 813, 6548, 36201, 279, 14071, 291, 6959, 439, 422, 15389, 369, 264, 3230, 33487, 382, 791, 5222, 315, 342, 71523, 31299, 32115, 6688, 1648, 311, 279, 8309, 66206, 315]
-        #expect(tokens == tokenBaseline)
-    }
-}
-
-// MARK: - Helper Methods
-
-extension LlamaServiceTests {
-    
-    private func createLlamaService() -> LlamaService {
-        LlamaService(
-            modelUrl: .llama1B,
-            config: .init(
-                batchSize: TestConfig.batchSize,
-                maxTokenCount: TestConfig.contextLength
-            )
-        )
-    }
-    
-    private func createPerformanceSamplingConfig() -> LlamaSamplingConfig {
-        LlamaSamplingConfig(
-            temperature: 0.7,
-            seed: TestConfig.testSeed
-        )
-    }
-    
-    private func createStoryMessages() -> [LlamaChatMessage] {
-        [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant."),
-            LlamaChatMessage(role: .user, content: "Can you tell me a long story about mars colonization?")
-        ]
-    }
-    
-    private func createSimpleMessages() -> [LlamaChatMessage] {
-        [
-            LlamaChatMessage(role: .user, content: "Write a short sentence about the weather.")
-        ]
-    }
-    
-    private func createRepetitivePromptMessages() -> [LlamaChatMessage] {
-        [
-            LlamaChatMessage(role: .user, content: "Write about cats. Cats are great. Cats cats cats. Tell me more about cats.")
-        ]
-    }
-    
-    private func loadJSONGrammar() throws -> String {
-        guard let grammarURL = Bundle.module.url(forResource: "Resources/json", withExtension: "gbnf") else {
-            throw TestError.resourceNotFound("json.gbnf")
-        }
-        return try String(contentsOf: grammarURL)
-    }
-    
-    private func createJSONSamplingConfig() throws -> LlamaSamplingConfig {
-        let grammarString = try loadJSONGrammar()
-        let grammarConfig = LlamaGrammarConfig(
-            grammar: grammarString,
-            grammarRoot: "root"
-        )
-        
-        return LlamaSamplingConfig(
-            temperature: 0.1, // Low temperature for deterministic output
-            seed: TestConfig.testSeed,
-            grammarConfig: grammarConfig
-        )
-    }
-    
-    private func createJSONMessages() -> [LlamaChatMessage] {
-        [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in valid JSON format."),
-            LlamaChatMessage(role: .user, content: "Generate a JSON object describing a person with name, age, and city properties.")
-        ]
-    }
-    
-    private func createJSONArrayMessages() -> [LlamaChatMessage] {
-        [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in valid JSON array format."),
-            LlamaChatMessage(role: .user, content: "Generate a JSON array containing 3 different fruits as strings.")
-        ]
-    }
-    
-    private func loadJSONArrayGrammar() throws -> String {
-        guard let grammarURL = Bundle.module.url(forResource: "Resources/json_array", withExtension: "gbnf") else {
-            throw TestError.resourceNotFound("json_array.gbnf")
-        }
-        return try String(contentsOf: grammarURL)
-    }
-    
-    private func createJSONArraySamplingConfig() throws -> LlamaSamplingConfig {
-        let grammarString = try loadJSONArrayGrammar()
-        let grammarConfig = LlamaGrammarConfig(
-            grammar: grammarString,
-            grammarRoot: "root"
-        )
-        
-        return LlamaSamplingConfig(
-            temperature: 0.1, // Low temperature for deterministic output
-            seed: TestConfig.testSeed,
-            grammarConfig: grammarConfig
-        )
-    }
-
-    private func loadJSONStringArrayGrammar() throws -> String {
-        guard let grammarURL = Bundle.module.url(forResource: "Resources/json_array_strings", withExtension: "gbnf") else {
-            throw TestError.resourceNotFound("json_array_strings.gbnf")
-        }
-        return try String(contentsOf: grammarURL)
-    }
-
-    private func createJSONStringArraySamplingConfig() throws -> LlamaSamplingConfig {
-        let grammarString = try loadJSONStringArrayGrammar()
-        let grammarConfig = LlamaGrammarConfig(
-            grammar: grammarString,
-            grammarRoot: "root"
-        )
-        return LlamaSamplingConfig(
-            temperature: 0.1,
-            seed: TestConfig.testSeed,
-            grammarConfig: grammarConfig
-        )
-    }
-    
-    private func measureTokenGenerationPerformance(
-        messages: [LlamaChatMessage],
-        samplingConfig: LlamaSamplingConfig,
-        targetTokens: Int
-    ) async throws -> (tokenCount: Int, tokensPerSecond: Double, generatedText: String) {
-        
-        let startTime = CFAbsoluteTimeGetCurrent()
-        let stream = try await llamaService.streamCompletion(of: messages, samplingConfig: samplingConfig)
-        
-        var generatedTokensCount = 0
-        var generatedText = ""
-        
-        for try await token in stream where generatedTokensCount < targetTokens {
-            generatedTokensCount += 1
-            generatedText += token
-        }
-        
-        let endTime = CFAbsoluteTimeGetCurrent()
-        let timeElapsed = endTime - startTime
-        let tokensPerSecond = Double(generatedTokensCount) / timeElapsed
-        
-        return (generatedTokensCount, tokensPerSecond, generatedText)
-    }
-    
-    private func generateJSONWithGrammar(
-        messages: [LlamaChatMessage],
-        samplingConfig: LlamaSamplingConfig,
-        maxTokens: Int
-    ) async throws -> String {
-        
-        let stream = try await llamaService.streamCompletion(of: messages, samplingConfig: samplingConfig)
-        var generatedText = ""
-        var tokenCount = 0
-        
-        for try await token in stream where tokenCount < maxTokens {
-            generatedText += token
-            tokenCount += 1
-            
-            // Stop when we have a complete JSON object
-            if isCompleteJSON(generatedText) {
-                break
-            }
-        }
-        
-        return generatedText
-    }
-    
-    private func generateLimitedText(
-        messages: [LlamaChatMessage],
-        samplingConfig: LlamaSamplingConfig,
-        maxTokens: Int
-    ) async throws -> String {
-        
-        let stream = try await llamaService.streamCompletion(of: messages, samplingConfig: samplingConfig)
-        var generatedText = ""
-        var tokenCount = 0
-        
-        for try await token in stream where tokenCount < maxTokens {
-            generatedText += token
-            tokenCount += 1
-        }
-        
-        return generatedText
-    }
-
-    private func generateText(
-        using service: LlamaService,
-        messages: [LlamaChatMessage],
-        samplingConfig: LlamaSamplingConfig,
-        maxTokens: Int
-    ) async throws -> String {
-        let stream = try await service.streamCompletion(of: messages, samplingConfig: samplingConfig)
-        var generatedText = ""
-        var tokenCount = 0
-        for try await token in stream where tokenCount < maxTokens {
-            generatedText += token
-            tokenCount += 1
-        }
-        return generatedText
-    }
-
-    @Test("Service respects maxTokenCount and does not exceed it")
-    func testServiceRespectsMaxTokenCount() async throws {
-        // Given: a very small maxTokenCount to make the test fast
-        let hardLimit = 40
-        let service = LlamaService(
-            modelUrl: .llama1B,
-            config: .init(batchSize: 256, maxTokenCount: UInt32(hardLimit), useGPU: false)
-        )
-        let messages = [
-            LlamaChatMessage(role: .system, content: "You are a helpful assistant."),
-            LlamaChatMessage(role: .user, content: "Write a long paragraph about Mars to ensure many tokens are produced.")
-        ]
-        let cfg = LlamaSamplingConfig(temperature: 0.7, seed: 123)
-
-        // When: stream until the model stops due to context/token budget
-        let stream = try await service.streamCompletion(of: messages, samplingConfig: cfg)
-        var produced = 0
-        for try await _ in stream {
-            produced += 1
-            if produced > hardLimit + 2 { break } // safety guard for the loop
-        }
-
-        // Then: should not exceed the configured maxTokenCount
-        #expect(produced <= hardLimit)
-    }
-    
-    private func isCompleteJSON(_ text: String) -> Bool {
-        // Check for complete JSON object
-        if text.contains("}") {
-            let openBraces = text.filter { $0 == "{" }.count
-            let closeBraces = text.filter { $0 == "}" }.count
-            if openBraces == closeBraces && openBraces > 0 {
-                return true
-            }
-        }
-        
-        // Check for complete JSON array
-        if text.contains("]") {
-            let openBrackets = text.filter { $0 == "[" }.count
-            let closeBrackets = text.filter { $0 == "]" }.count
-            if openBrackets == closeBrackets && openBrackets > 0 {
-                return true
-            }
-        }
-        
-        return false
-    }
-    
-    private func validateJSON(_ jsonString: String) throws -> [String: Any] {
-        guard let jsonData = jsonString.data(using: .utf8) else {
-            throw TestError.invalidJSON("Could not convert to data")
-        }
-        
-        let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: [])
-        
-        guard let dictionary = jsonObject as? [String: Any] else {
-            throw TestError.invalidJSON("JSON is not an object/dictionary")
-        }
-        
-        return dictionary
-    }
-    
-    private func validateJSONArray(_ jsonString: String) throws -> [Any] {
-        guard let jsonData = jsonString.data(using: .utf8) else {
-            throw TestError.invalidJSON("Could not convert to data")
-        }
-        
-        let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: [])
-        
-        guard let array = jsonObject as? [Any] else {
-            throw TestError.invalidJSON("JSON is not an array")
-        }
-        
-        return array
-    }
-
-    private func validateStringArray(_ jsonString: String) throws -> [String] {
-        guard let jsonData = jsonString.data(using: .utf8) else {
-            throw TestError.invalidJSON("Could not convert to data")
-        }
-        let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: [])
-        guard let array = jsonObject as? [String] else {
-            throw TestError.invalidJSON("JSON is not an array of strings")
-        }
-        return array
-    }
-}
-
-// MARK: - Test Errors
-
-private enum TestError: Error, LocalizedError {
-    case resourceNotFound(String)
-    case invalidJSON(String)
-    
-    var errorDescription: String? {
-        switch self {
-        case .resourceNotFound(let resource):
-            return "Test resource not found: \(resource)"
-        case .invalidJSON(let reason):
-            return "Invalid JSON: \(reason)"
-        }
-    }
-}
-
+1|//
+2|//  LlamaEngineTests.swift
+3|//  LlamaSwift
+4|//
+5|//  Created by Piotr Gorzelany on 22/10/2024.
+6|//
+7|
+8|import Testing
+9|import Foundation
+10|import OSLog
+11|@testable import SwiftLlama
+12|
+13|struct LlamaEngineTests {
+14|
+15|    // MARK: - Test Configuration
+16|    
+17|    private struct TestConfig {
+18|        static let contextLength: UInt32 = 16384
+19|        static let batchSize: UInt32 = 1024
+20|        static let performanceTargetTokens = 500
+21|        static let jsonTestMaxTokens = 100
+22|        // Local performance baselines captured on this machine (detect regressions)
+23|        static let minimumTokensPerSecond: Double = 20.0
+24|        static let testSeed: UInt32 = 42
+25|        static let shortTestTokens = 50
+26|        static let grammarPerformanceTokens = 20
+27|        static let grammarMinimumTokensPerSecond: Double = 3.0
+28|        static let deterministicTokens = 100
+29|        static let deterministicMinCharacters = 200
+30|    }
+31|    
+32|    // MARK: - Properties
+33|    
+34|    private var llamaService: LlamaEngine!
+35|    private let logger = Logger(subsystem: "SwiftLlamaTests", category: "LlamaServiceTests")
+36|    
+37|    // MARK: - Setup and Teardown
+38|
+39|    init() {
+40|        llamaService = createLlamaEngine()
+41|    }
+42|
+43|    // MARK: - Performance Tests
+44|
+45|    @Test("Streaming performance baseline")
+46|    func testStreamCompletionPerformance() async throws {
+47|        // Given
+48|        let messages = createStoryMessages()
+49|        let samplingConfig = createPerformanceSamplingConfig()
+50|        
+51|        // When
+52|        let result = try await measureTokenGenerationPerformance(
+53|            messages: messages,
+54|            samplingConfig: samplingConfig,
+55|            targetTokens: TestConfig.performanceTargetTokens
+56|        )
+57|        
+58|        // Then
+59|        #expect(result.tokenCount == TestConfig.performanceTargetTokens)
+60|        // Local baseline; intent is regression tracking, not strict perf
+61|        #expect(result.tokensPerSecond > TestConfig.minimumTokensPerSecond)
+62|        
+63|        // Log performance metrics
+64|        print("PERF_STREAM tokens=\(result.tokenCount) tps=\(String(format: "%.2f", result.tokensPerSecond))")
+65|        logger.info("=== Performance Test Results ===")
+66|        logger.info("Generated \(result.tokenCount) tokens")
+67|        logger.info("Speed: \(String(format: "%.2f", result.tokensPerSecond), privacy: .public) tokens/second")
+68|        logger.info("Generated text preview: \(String(result.generatedText.prefix(100)), privacy: .public)...")
+69|    }
+70|    
+71|    @Test("Grammar generation performance baseline")
+72|    func testGrammarGenerationPerformance() async throws {
+73|        // Given
+74|        let messages = createJSONMessages()
+75|        let samplingConfig = try createJSONSamplingConfig()
+76|        
+77|        // When
+78|        let result = try await measureTokenGenerationPerformance(
+79|            messages: messages,
+80|            samplingConfig: samplingConfig,
+81|            targetTokens: TestConfig.grammarPerformanceTokens
+82|        )
+83|        
+84|        // Then
+85|        // Baseline: ensure some progress and modest throughput to track regressions
+86|        #expect(result.tokenCount >= 10)
+87|        #expect(result.tokensPerSecond > TestConfig.grammarMinimumTokensPerSecond)
+88|        
+89|        // Note: performance harness may cut mid-JSON; don't validate structure here
+90|        
+91|        // Log performance metrics
+92|        print("PERF_GRAMMAR tokens=\(result.tokenCount) tps=\(String(format: "%.2f", result.tokensPerSecond))")
+93|        logger.info("=== Grammar Generation Performance ===")
+94|        logger.info("Generated \(result.tokenCount) tokens")
+95|        logger.info("Speed: \(String(format: "%.2f", result.tokensPerSecond), privacy: .public) tokens/second")
+96|        logger.info("Valid JSON generated: \(result.generatedText.prefix(100), privacy: .public)...")
+97|    }
+98|
+99|    // MARK: - Grammar Tests
+100|    
+101|    @Test("JSON object generation with grammar")
+102|    func testJSONGenerationWithGrammar() async throws {
+103|        // Given
+104|        let messages = createJSONMessages()
+105|        let samplingConfig = try createJSONSamplingConfig()
+106|        
+107|        // When
+108|        let generatedText = try await generateJSONWithGrammar(
+109|            messages: messages,
+110|            samplingConfig: samplingConfig,
+111|            maxTokens: TestConfig.jsonTestMaxTokens
+112|        )
+113|        
+114|        // Then
+115|        #expect(!generatedText.isEmpty)
+116|        
+117|        let jsonObject = try validateJSON(generatedText)
+118|        
+119|        // Log results
+120|        logger.info("=== JSON Generation Test Results ===")
+121|        logger.info("Generated JSON: \(generatedText, privacy: .public)")
+122|        logger.info("Parsed object keys: \(Array(jsonObject.keys), privacy: .public)")
+123|        
+124|        // Verify structure (optional - could be more specific based on requirements)
+125|        #expect(jsonObject.count > 0)
+126|    }
+127|    
+128|    @Test("JSON array generation with grammar")
+129|    func testJSONArrayGenerationWithGrammar() async throws {
+130|        // Given
+131|        let messages = createJSONArrayMessages()
+132|        let samplingConfig = try createJSONArraySamplingConfig()
+133|        
+134|        // When
+135|        let generatedText = try await generateJSONWithGrammar(
+136|            messages: messages,
+137|            samplingConfig: samplingConfig,
+138|            maxTokens: TestConfig.jsonTestMaxTokens
+139|        )
+140|        
+141|        // Then
+142|        #expect(!generatedText.isEmpty)
+143|        
+144|        let jsonArray = try validateJSONArray(generatedText)
+145|        
+146|        // Log results
+147|        logger.info("=== JSON Array Generation Test Results ===")
+148|        logger.info("Generated JSON Array: \(generatedText, privacy: .public)")
+149|        logger.info("Array contains \(jsonArray.count) elements")
+150|        if !jsonArray.isEmpty {
+151|            logger.info("First element type: \(String(describing: type(of: jsonArray[0])), privacy: .public)")
+152|        }
+153|        
+154|        // Verify structure
+155|        #expect(jsonArray.count >= 0)
+156|    }
+157|
+158|    @Test("JSON string array generation and parsing to [String]")
+159|    func testJSONStringArrayGenerationAndParsing() async throws {
+160|        // Given
+161|        let messages = [
+162|            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in valid JSON array format."),
+163|            LlamaChatMessage(role: .user, content: "Generate a JSON array of 5 programming languages as strings.")
+164|        ]
+165|        let samplingConfig = try createJSONStringArraySamplingConfig()
+166|
+167|        // When
+168|        let generatedText = try await generateJSONWithGrammar(
+169|            messages: messages,
+170|            samplingConfig: samplingConfig,
+171|            maxTokens: TestConfig.jsonTestMaxTokens
+172|        )
+173|
+174|        // Then
+175|        let array = try validateStringArray(generatedText)
+176|        #expect(!array.isEmpty)
+177|        // Basic sanity: ensure they look like single words or known languages
+178|        #expect(array.count == 5)
+179|    }
+180|    
+181|    // MARK: - Sampling Configuration Tests
+182|    
+183|    @Test("Determinism: same seed -> identical output")
+184|    func testSeedReproducibility() async throws {
+185|        // Given
+186|        let messages = createSimpleMessages()
+187|        let seed: UInt32 = 12345
+188|        let samplingConfig = LlamaSamplingConfig(temperature: 0.1, seed: seed)
+189|
+190|        // When - Generate same content twice with same seed
+191|        let result1 = try await generateLimitedText(
+192|            messages: messages,
+193|            samplingConfig: samplingConfig,
+194|            maxTokens: TestConfig.shortTestTokens
+195|        )
+196|
+197|        let result2 = try await generateLimitedText(
+198|            messages: messages,
+199|            samplingConfig: samplingConfig,
+200|            maxTokens: TestConfig.shortTestTokens
+201|        )
+202|        
+203|        // Then
+204|        #expect(result1 == result2)
+205|        
+206|        logger.info("=== Reproducibility Test Results ===")
+207|        logger.info("Output 1: \(result1, privacy: .public)")
+208|        logger.info("Output 2: \(result2, privacy: .public)")
+209|    }
+210|
+211|    @Test("Deterministic run produces at least 200 characters")
+212|    func testDeterministicMinimumCharacterCount() async throws {
+213|        // Given: use the longer story prompt and fixed seed
+214|        let messages = createStoryMessages()
+215|        let samplingConfig = LlamaSamplingConfig(temperature: 0.1, seed: TestConfig.testSeed)
+216|
+217|        // When
+218|        let result = try await generateLimitedText(
+219|            messages: messages,
+220|            samplingConfig: samplingConfig,
+221|            maxTokens: TestConfig.deterministicTokens
+222|        )
+223|
+224|        // Then
+225|        #expect(result.count >= TestConfig.deterministicMinCharacters)
+226|        logger.info("Deterministic length: \(result.count, privacy: .public) chars")
+227|    }
+228|
+229|    @Test("Short story matches deterministic baseline")
+230|    func testShortStoryMatchesBaseline() async throws {
+231|        // Given: fixed prompt and seed/temperature for determinism
+232|        let baseline = "Whiskers, a sleek and agile feline, spent her Martian days lounging in the low-gravity sunbeams that streamed through the transparent dome of her habitat module. At night, she'd prowl the dusty terrain outside, chasing after the occasional Martian dust bunny as she explored the barren landscape of Olympus Mons, the largest volcano on the Red Planet."
+233|        let messages = [
+234|            LlamaChatMessage(role: .system, content: "You are a helpful assistant."),
+235|            LlamaChatMessage(role: .user, content: "Write a concise two-sentence story about a cat living on Mars. Be specific.")
+236|        ]
+237|        let cfg = LlamaSamplingConfig(temperature: 0.1, seed: TestConfig.testSeed)
+238|
+239|        // When
+240|        let generated = try await generateLimitedText(messages: messages, samplingConfig: cfg, maxTokens: 160)
+241|
+242|        // Then: compare after light whitespace normalization to avoid incidental spacing differences
+243|        func normalize(_ s: String) -> String {
+244|            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+245|            let squashed = trimmed.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+246|            return squashed
+247|        }
+248|        #expect(normalize(generated) == normalize(baseline))
+249|    }
+250|
+251|    // NOTE: The baseline above was captured by a temporary print-only test and then inlined.
+252|    
+253|    @Test("Temperature impacts output")
+254|    func testTemperatureEffectsOnOutput() async throws {
+255|        // Given
+256|        let messages = createSimpleMessages()
+257|        let temperatureValues: [Float] = [0.0, 0.7, 1.3, 2.0]
+258|        var successes = 0
+259|        
+260|        logger.info("=== Temperature Effects Test Results ===")
+261|        logger.info("Testing temperatures from 0.0 to 2.0 in 0.1 intervals...")
+262|        
+263|        // When - Test each temperature value
+264|        for temperature in temperatureValues {
+265|            let samplingConfig = LlamaSamplingConfig(
+266|                temperature: temperature,
+267|                seed: TestConfig.testSeed
+268|            )
+269|            
+270|            do {
+271|                let result = try await generateLimitedText(
+272|                    messages: messages,
+273|                    samplingConfig: samplingConfig,
+274|                    maxTokens: 10
+275|                )
+276|                if !result.isEmpty { successes += 1 }
+277|            } catch {
+278|                let formattedTemp = String(format: "%.1f", temperature)
+279|                Issue.record("Temperature \(formattedTemp) failed with error: \(error)")
+280|            }
+281|        }
+282|        
+283|        // At least one temperature setting should yield output
+284|        #expect(successes >= 1)
+285|    }
+286|    
+287|    @Test("Top-K sampling produces output")
+288|    func testTopKSamplingConstraints() async throws {
+289|        // Given
+290|        let messages = createSimpleMessages()
+291|        let topKConfig = LlamaSamplingConfig(
+292|            temperature: 0.8,
+293|            seed: TestConfig.testSeed,
+294|            topK: 5 // Very restrictive top-k
+295|        )
+296|        
+297|        // When
+298|        let result = try await generateLimitedText(
+299|            messages: messages,
+300|            samplingConfig: topKConfig,
+301|            maxTokens: TestConfig.shortTestTokens
+302|        )
+303|        
+304|        // Then
+305|        #expect(!result.isEmpty)
+306|        
+307|        logger.info("=== Top-K Sampling Test Results ===")
+308|        logger.info("Generated with top-K=5: \(result, privacy: .public)")
+309|    }
+310|
+311|    // MARK: - respond<T: Codable>() Tests
+312|    
+313|    private struct Person: Codable, Equatable {
+314|        let name: String
+315|        let age: Int
+316|        let city: String?
+317|    }
+318|    
+319|    @Test("Typed respond() produces decodable JSON object")
+320|    func testRespondProducesDecodableObject() async throws {
+321|        // Given
+322|        let messages = [
+323|            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in JSON matching the schema."),
+324|            LlamaChatMessage(role: .user, content: "Return a person with name 'Ada', age 36, city 'London'.")
+325|        ]
+326|        
+327|        // When
+328|        let person = try await llamaService.respond(to: messages, generating: Person.self)
+329|        
+330|        // Then
+331|        #expect(!person.name.isEmpty)
+332|        #expect(person.age >= 0)
+333|    }
+334|
+335|    @Test("Typed respond() produces decodable array of strings")
+336|    func testRespondProducesArrayOfStrings() async throws {
+337|        // Given
+338|        let messages = [
+339|            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in a JSON array of strings."),
+340|            LlamaChatMessage(role: .user, content: "Return an array of 3 fruits as strings.")
+341|        ]
+342|        
+343|        // When
+344|        let fruits = try await llamaService.respond(to: messages, generating: [String].self)
+345|        
+346|        // Then
+347|        #expect(!fruits.isEmpty)
+348|        #expect(fruits.count >= 3)
+349|    }
+350|    
+351|    // MARK: - respond(messages:samplingConfig:) Tests
+352|    
+353|    @Test("Plain respond() returns non-empty text")
+354|    func testRespondTextNonEmpty() async throws {
+355|        // Given: small token budget to keep the test bounded
+356|        let service = LlamaEngine(
+357|            modelUrl: .llama1B,
+358|            config: .init(batchSize: 256, maxTokenCount: 80, useGPU: false)
+359|        )
+360|        let messages = [
+361|            LlamaChatMessage(role: .system, content: "You are a helpful assistant."),
+362|            LlamaChatMessage(role: .user, content: "Write a single short sentence (max 20 words).")
+363|        ]
+364|        let cfg = LlamaSamplingConfig(temperature: 0.3, seed: TestConfig.testSeed)
+365|
+366|        // When
+367|        let text = try await service.respond(to: messages, samplingConfig: cfg)
+368|
+369|        // Then
+370|        #expect(!text.isEmpty)
+371|    }
+372|
+373|    @Test("Plain respond() is deterministic with same seed")
+374|    func testRespondDeterminismWithSameSeed() async throws {
+375|        // Given: two fresh services and identical config for determinism
+376|        let cfg = LlamaSamplingConfig(temperature: 0.1, seed: TestConfig.testSeed)
+377|        let serviceA = LlamaEngine(
+378|            modelUrl: .llama1B,
+379|            config: .init(batchSize: 256, maxTokenCount: 80, useGPU: false)
+380|        )
+381|        let serviceB = LlamaEngine(
+382|            modelUrl: .llama1B,
+383|            config: .init(batchSize: 256, maxTokenCount: 80, useGPU: false)
+384|        )
+385|        let messages = createSimpleMessages()
+386|
+387|        // When
+388|        let out1 = try await serviceA.respond(to: messages, samplingConfig: cfg)
+389|        let out2 = try await serviceB.respond(to: messages, samplingConfig: cfg)
+390|
+391|        // Then
+392|        #expect(out1 == out2)
+393|    }
+394|
+395|    // MARK: - json_array_strings.gbnf grammar with respond()
+396|
+397|    @Test("JSONStringArray grammar via respond() decodes to [String]")
+398|    func testJSONStringArrayRespondParsesToArray() async throws {
+399|        // Given
+400|        let samplingConfig = try createJSONStringArraySamplingConfig()
+401|        let service = LlamaEngine(
+402|            modelUrl: .llama1B,
+403|            config: .init(batchSize: 256, maxTokenCount: 120, useGPU: false)
+404|        )
+405|        let messages = [
+406|            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in a JSON array of strings."),
+407|            LlamaChatMessage(role: .user, content: "Generate a JSON array of 4 animals as strings.")
+408|        ]
+409|
+410|        // When
+411|        let generatedText = try await service.respond(to: messages, samplingConfig: samplingConfig)
+412|
+413|        // Then
+414|        let array = try validateStringArray(generatedText)
+415|        #expect(array.count == 4)
+416|    }
+417|
+418|    @Test("JSONStringArray grammar via respond() is deterministic with same seed")
+419|    func testJSONStringArrayRespondDeterminism() async throws {
+420|        // Given
+421|        let samplingConfig = try createJSONStringArraySamplingConfig()
+422|        let serviceA = LlamaEngine(
+423|            modelUrl: .llama1B,
+424|            config: .init(batchSize: 256, maxTokenCount: 120, useGPU: false)
+425|        )
+426|        let serviceB = LlamaEngine(
+427|            modelUrl: .llama1B,
+428|            config: .init(batchSize: 256, maxTokenCount: 120, useGPU: false)
+429|        )
+430|        let messages = [
+431|            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in a JSON array of strings."),
+432|            LlamaChatMessage(role: .user, content: "Generate a JSON array of 3 programming languages as strings.")
+433|        ]
+434|
+435|        // When
+436|        let out1 = try await serviceA.respond(to: messages, samplingConfig: samplingConfig)
+437|        let out2 = try await serviceB.respond(to: messages, samplingConfig: samplingConfig)
+438|
+439|        // Then
+440|        #expect(out1 == out2)
+441|        let arr1 = try validateStringArray(out1)
+442|        let arr2 = try validateStringArray(out2)
+443|        #expect(arr1 == arr2)
+444|    }
+445|
+446|    @Test("JSONStringArray grammar remains valid at high temperature via respond()")
+447|    func testJSONStringArrayHighTemperatureValidity() async throws {
+448|        // Given: high temperature but constrained by grammar should still yield valid JSON array of strings
+449|        let grammarString = try loadJSONStringArrayGrammar()
+450|        let grammarConfig = LlamaGrammarConfig(grammar: grammarString, grammarRoot: "root")
+451|        let samplingConfig = LlamaSamplingConfig(
+452|            temperature: 1.8,
+453|            seed: TestConfig.testSeed,
+454|            grammarConfig: grammarConfig
+455|        )
+456|        let service = LlamaEngine(
+457|            modelUrl: .llama1B,
+458|            config: .init(batchSize: 256, maxTokenCount: 120, useGPU: false)
+459|        )
+460|        let messages = [
+461|            LlamaChatMessage(role: .system, content: "You are a helpful assistant that responds only in a JSON array of strings."),
+462|            LlamaChatMessage(role: .user, content: "Generate a short JSON array of lowercase fruit names as strings.")
+463|        ]
+464|
+465|        // When
+466|        let generatedText = try await service.respond(to: messages, samplingConfig: samplingConfig)
+467|
+468|        // Then: ensure it's a valid JSON array of strings (size may vary)
+469|        let array = try validateStringArray(generatedText)
+470|        #expect(!array.isEmpty)
+471|    }
+472|    
+473|    @Test("Repetition penalty produces output")
+474|    func testRepetitionPenaltyConfiguration() async throws {
+475|        // Given
+476|        let messages = createRepetitivePromptMessages()
+477|        let penaltyConfig = LlamaRepetitionPenaltyConfig(
+478|            lastN: 20,
+479|            repeatPenalty: 1.3,
+480|            freqPenalty: 0.1,
+481|            presentPenalty: 0.1
+482|        )
+483|        let samplingConfig = LlamaSamplingConfig(
+484|            temperature: 0.8,
+485|            seed: TestConfig.testSeed,
+486|            repetitionPenaltyConfig: penaltyConfig
+487|        )
+488|        
+489|        // When
+490|        let result = try await generateLimitedText(
+491|            messages: messages,
+492|            samplingConfig: samplingConfig,
+493|            maxTokens: TestConfig.shortTestTokens
+494|        )
+495|        
+496|        // Then
+497|        #expect(!result.isEmpty)
+498|        
+499|        logger.info("=== Repetition Penalty Test Results ===")
+500|        logger.info("Generated with penalties: \(result, privacy: .public)")
+501|

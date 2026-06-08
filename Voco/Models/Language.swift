@@ -61,7 +61,7 @@ enum Language: String, CaseIterable, Identifiable, Codable {
     var code: String { rawValue }
 
     /// Look up a Language by its display name or hunyuan target name.
-    /// Used by LlamaService to resolve user-facing language names to enum values.
+    /// Used by TranslationService to resolve user-facing language names to enum values.
     static func find(byDisplayOrHunyuanName name: String) -> Language? {
         allCases.first(where: { $0.displayName == name || $0.hunyuanTargetName == name })
     }

@@ -25,7 +25,7 @@ final class ModelLifecycleManager {
         case error(String)
     }
 
-    private let inferenceService = LlamaService()
+    private let inferenceService = TranslationService()
     private let downloadManager = ModelManagerService()
 
     /// Activate a local model — download if needed, then load into memory.

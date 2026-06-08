@@ -2,7 +2,7 @@
 //  ModelConfiguration.swift
 //  Voco
 //
-//  Per-model runtime configuration for LlamaService.
+//  Per-model runtime configuration for TranslationService.
 //
 
 import Foundation

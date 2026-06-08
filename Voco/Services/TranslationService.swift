@@ -8,8 +8,8 @@ import OSLog
 /// Works on both device and simulator by using prebuilt llama.cpp xcframework binaries.
 @Observable
 @MainActor
-final class LlamaService {
-    private var inferenceService: SwiftLlama.LlamaService?
+final class TranslationService {
+    private var inferenceService: SwiftLlama.LlamaEngine?
     private var currentModel: TranslationModel?
 
     /// Whether a model is currently loaded and ready for inference.
@@ -40,9 +40,9 @@ final class LlamaService {
             nThreadsBatch: UInt32(cfg.threadCountBatch)
         )
 
-        inferenceService = SwiftLlama.LlamaService(modelUrl: url, config: llamaConfig)
+        inferenceService = SwiftLlama.LlamaEngine(modelUrl: url, config: llamaConfig)
         currentModel = model
-        VocoLog.translation.info("[LlamaService] Loaded model '\\(model.displayName)' — threads=\\(cfg.threadCount)/\\(cfg.threadCountBatch)")
+        VocoLog.translation.info("[TranslationService] Loaded model '\\(model.displayName)' — threads=\\(cfg.threadCount)/\\(cfg.threadCountBatch)")
     }
 
     /// Releases the currently loaded model to free memory.
