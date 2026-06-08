@@ -185,7 +185,7 @@ extension TranslationModel {
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/qwen3.5-4b-q4_k_m-gguf/resolve/main/qwen3.5-4b-q4_k_m.gguf")!,
             fileSizeBytes: 2_783_446_240, supportedLanguages: Language.allCases,
             hfRepo: "zanish-labs/qwen3.5-4b-q4_k_m-gguf",
-            quantization: "Q4_K_M", config: .qwenInstruct,
+            quantization: "Q4_K_M", config: .qwen4bInstruct,
             capability: .deviceRecommended, parameterCount: "4B",
             sha256: "9b1ca7b52bba671bd255e8ae60b3b1d522e21b58a3a1131d293fd96345e8bd22",
             baseModelName: "Qwen3.5 4B",

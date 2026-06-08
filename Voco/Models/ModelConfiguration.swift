@@ -68,9 +68,22 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         rawPromptMarker: nil
     )
 
-    /// Qwen2.5 / Qwen3.5 Instruct — ChatML format.
-    /// One-line directive format with <|im_end|> stop.
+    /// Qwen2.5 / Qwen3.5 0.8B & 2B Instruct — ChatML format.
+    /// Lightweight models — no thinking suppression needed.
     static let qwenInstruct = ModelConfiguration(
+        promptStrategy: .chatWithSystem,
+        batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
+        temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
+        systemPrompt: "You are a translator. Output the translation and nothing else.",
+        userPromptTemplate: "Translate to {target}: {text}",
+        addBos: nil,
+        stopStrings: ["<|im_end|>"],
+        rawPromptMarker: nil
+    )
+
+    /// Qwen3.5 4B Instruct — thinking model.
+    /// Thinking suppressed via </think> prefix in system prompt.
+    static let qwen4bInstruct = ModelConfiguration(
         promptStrategy: .chatWithSystem,
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true,
