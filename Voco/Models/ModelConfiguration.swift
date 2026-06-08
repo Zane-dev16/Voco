@@ -103,7 +103,7 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         systemPrompt: "",
         userPromptTemplate: "Translate to {target}: {text}\n{target}:",
         addBos: true,
-        stopStrings: [],
+        stopStrings: ["\nTranslate to", "\n\n"],
         rawPromptMarker: nil
     )
 
