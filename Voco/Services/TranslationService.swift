@@ -33,16 +33,16 @@ final class TranslationService {
 
         let cfg = model.config
         let llamaConfig = LlamaConfig(
-            batchSize: UInt32(cfg.batchSize),
-            maxTokenCount: UInt32(cfg.maxTokenCount),
-            useGPU: cfg.useGPU,
-            nThreads: UInt32(cfg.threadCount),
-            nThreadsBatch: UInt32(cfg.threadCountBatch)
+            batchSize: UInt32(cfg.runtime.batchSize),
+            maxTokenCount: UInt32(cfg.runtime.maxTokenCount),
+            useGPU: cfg.runtime.useGPU,
+            nThreads: UInt32(cfg.runtime.threadCount),
+            nThreadsBatch: UInt32(cfg.runtime.threadCountBatch)
         )
 
         inferenceService = SwiftLlama.LlamaEngine(modelUrl: url, config: llamaConfig)
         currentModel = model
-        VocoLog.translation.info("[TranslationService] Loaded model '\\(model.displayName)' — threads=\\(cfg.threadCount)/\\(cfg.threadCountBatch)")
+        VocoLog.translation.info("[TranslationService] Loaded model '\(model.displayName)' — threads=\(cfg.runtime.threadCount)/\(cfg.runtime.threadCountBatch)")
     }
 
     /// Releases the currently loaded model to free memory.
@@ -71,7 +71,7 @@ final class TranslationService {
         let sampling = PromptBuilder.samplingConfig(from: model.config)
 
         let rawOutput: String
-        switch model.config.promptStrategy {
+        switch model.config.prompt.strategy {
         case .raw:
             let rawPrompt = PromptBuilder.formatRawPrompt(
                 text: text,
@@ -80,15 +80,15 @@ final class TranslationService {
                 config: model.config
             )
             var output = ""
-            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos) { output += token }
-            rawOutput = OutputProcessor.stripPromptEcho(output, marker: model.config.rawPromptMarker)
+            for try await token in try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.prompt.addBos) { output += token }
+            rawOutput = OutputProcessor.stripPromptEcho(output, marker: model.config.prompt.rawPromptMarker)
 
         case .chatUserOnly, .chatWithSystem:
             let messages = PromptBuilder.buildMessages(text: text, source: sourceLanguage, target: targetLanguage, config: model.config)
             rawOutput = OutputProcessor.stripThinkingTags(from: try await service.respond(to: messages, samplingConfig: sampling))
         }
 
-        return OutputProcessor.truncateAtStopStrings(rawOutput, stopStrings: model.config.stopStrings)
+        return OutputProcessor.truncateAtStopStrings(rawOutput, stopStrings: model.config.prompt.stopStrings)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -106,7 +106,7 @@ final class TranslationService {
 
         let sampling = PromptBuilder.samplingConfig(from: model.config)
 
-        if model.config.promptStrategy == .raw {
+        if model.config.prompt.strategy == .raw {
             let rawPrompt = PromptBuilder.formatRawPromptForStream(
                 text: text,
                 sourceLanguage: sourceLanguage,
@@ -114,12 +114,12 @@ final class TranslationService {
                 config: model.config
             )
 
-            let stopStrings = model.config.stopStrings
-            let marker = model.config.rawPromptMarker
+            let stopStrings = model.config.prompt.stopStrings
+            let marker = model.config.prompt.rawPromptMarker
             return AsyncThrowingStream { continuation in
                 Task {
                     do {
-                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.addBos)
+                        let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.prompt.addBos)
                         var buffer = ""
                         var stopped = false
                         var markerFound = marker == nil  // If no marker, start yielding immediately
@@ -190,7 +190,7 @@ final class TranslationService {
             config: model.config
         )
 
-        let stopStrings = model.config.stopStrings
+        let stopStrings = model.config.prompt.stopStrings
         return AsyncThrowingStream { continuation in
             Task {
                 do {

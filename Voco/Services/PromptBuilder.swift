@@ -21,15 +21,15 @@ enum PromptBuilder {
         target: String,
         config: ModelConfiguration
     ) -> [LlamaChatMessage] {
-        let userPrompt = config.userPromptTemplate
+        let userPrompt = config.prompt.userPromptTemplate
             .replacingOccurrences(of: "{source}", with: source)
             .replacingOccurrences(of: "{target}", with: target)
             .replacingOccurrences(of: "{text}", with: text)
         // Gemma-family models: chatUserOnly — no system role
-        if config.promptStrategy == .chatUserOnly {
+        if config.prompt.strategy == .chatUserOnly {
             return [LlamaChatMessage(role: .user, content: userPrompt)]
         }
-        let sys = config.systemPrompt.replacingOccurrences(of: "{target}", with: target)
+        let sys = config.prompt.systemPrompt.replacingOccurrences(of: "{target}", with: target)
         return [LlamaChatMessage(role: .system, content: sys), LlamaChatMessage(role: .user, content: userPrompt)]
     }
 
@@ -52,7 +52,7 @@ enum PromptBuilder {
             resolvedSource = sourceLanguage
             resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.hunyuanTargetName ?? targetLanguage
         }
-        return config.userPromptTemplate
+        return config.prompt.userPromptTemplate
             .replacingOccurrences(of: "{source}", with: resolvedSource)
             .replacingOccurrences(of: "{source_code}", with: resolvedSource)
             .replacingOccurrences(of: "{target}", with: resolvedTarget)
@@ -68,7 +68,7 @@ enum PromptBuilder {
         config: ModelConfiguration
     ) -> String {
         let resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.hunyuanTargetName ?? targetLanguage
-        return config.userPromptTemplate
+        return config.prompt.userPromptTemplate
             .replacingOccurrences(of: "{source}", with: sourceLanguage)
             .replacingOccurrences(of: "{target}", with: resolvedTarget)
             .replacingOccurrences(of: "{text}", with: text)
@@ -79,10 +79,10 @@ enum PromptBuilder {
     /// Converts ModelConfiguration sampling parameters to LlamaSamplingConfig.
     static func samplingConfig(from config: ModelConfiguration) -> LlamaSamplingConfig {
         LlamaSamplingConfig(
-            temperature: config.temperature,
-            seed: config.seed,
-            topP: config.topP,
-            topK: config.topK
+            temperature: config.runtime.temperature,
+            seed: config.runtime.seed,
+            topP: config.runtime.topP,
+            topK: config.runtime.topK
         )
     }
 }

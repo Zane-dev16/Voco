@@ -15,8 +15,8 @@ struct Gemma4E2BTests {
         
         // Verify config
         #expect(model.config == .gemma4Raw, "Should use gemma4Raw config")
-        #expect(model.config.addBos == false, "Should have addBos = false")
-        #expect(model.config.promptStrategy == .raw, "Should use raw prompt strategy")
+        #expect(model.config.prompt.addBos == true, "Should have addBos = true")
+        #expect(model.config.prompt.strategy == .raw, "Should use raw prompt strategy")
         
         // Load the model
         let lifecycle = ModelLifecycleManager()
