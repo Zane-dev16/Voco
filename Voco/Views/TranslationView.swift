@@ -28,6 +28,7 @@ struct TranslationView: View {
     @State private var errorMessage: String?
     @State private var isRecording = false
     @State private var speechService: SpeechService?
+    @State private var translationTask: Task<Void, Never>?
     @State private var swapRotation: Double = 0
     @FocusState private var isInputFocused: Bool
 
@@ -238,6 +239,8 @@ struct TranslationView: View {
                 // Clear / Paste
                 if !inputText.isEmpty {
                     Button {
+                        translationTask?.cancel()
+                        translationTask = nil
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             inputText = ""
                             outputText = ""
@@ -522,7 +525,10 @@ VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
 
     private func performTranslation() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isTranslating else { return }
+        guard !text.isEmpty else { return }
+
+        // Cancel any in-flight translation before starting a new one
+        translationTask?.cancel()
 
         isTranslating = true
         outputText = ""
@@ -530,7 +536,7 @@ VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
 
         let targetLang = targetLanguage.hunyuanTargetName
 
-        Task {
+        translationTask = Task {
             var fullOutput = ""
             var tokenCount = 0
 
@@ -542,6 +548,7 @@ VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
 
             do {
                 for try await chunk in stream {
+                    try Task.checkCancellation()
                     fullOutput += chunk
                     tokenCount += 1
 
@@ -554,14 +561,21 @@ VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
                     }
                 }
 
-                await MainActor.run {
-                    isTranslating = false
-                    haptic.impactOccurred(intensity: 0.8)
+                // Only finalize if not cancelled
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        isTranslating = false
+                        haptic.impactOccurred(intensity: 0.8)
+                    }
                 }
+            } catch is CancellationError {
+                // Swallow — new translation replaced this one
             } catch {
-                await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    isTranslating = false
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        errorMessage = error.localizedDescription
+                        isTranslating = false
+                    }
                 }
             }
         }
