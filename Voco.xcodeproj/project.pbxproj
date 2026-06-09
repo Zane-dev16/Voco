@@ -12,12 +12,19 @@
 
 /* Begin PBXFileReference section */
 		512D511A2FB5E00700E770FB /* Voco.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Voco.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000012FB5E00700E770FB /* VocoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VocoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		512D511C2FB5E00700E770FB /* Voco */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Voco;
+			sourceTree = "<group>";
+		};
+		AA0000022FB5E00700E770FB /* VocoTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			fileEncoding = 4;
+			path = VocoTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -31,6 +38,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000032FB5E00700E770FB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -38,6 +52,7 @@
 			isa = PBXGroup;
 			children = (
 				512D511C2FB5E00700E770FB /* Voco */,
+				AA0000022FB5E00700E770FB /* VocoTests */,
 				512D511B2FB5E00700E770FB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				512D511A2FB5E00700E770FB /* Voco.app */,
+				AA0000012FB5E00700E770FB /* VocoTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,6 +92,28 @@
 			productReference = 512D511A2FB5E00700E770FB /* Voco.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA0000052FB5E00700E770FB /* VocoTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000082FB5E00700E770FB /* Build configuration list for PBXNativeTarget "VocoTests" */;
+			buildPhases = (
+				AA0000042FB5E00700E770FB /* Sources */,
+				AA0000032FB5E00700E770FB /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000092FB5E00700E770FB /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000022FB5E00700E770FB /* VocoTests */,
+			);
+			name = VocoTests;
+			packageProductDependencies = (
+			);
+			productName = VocoTests;
+			productReference = AA0000012FB5E00700E770FB /* VocoTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -88,6 +126,10 @@
 				TargetAttributes = {
 					512D51192FB5E00700E770FB = {
 						CreatedOnToolsVersion = 26.5;
+					};
+					AA0000052FB5E00700E770FB = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 512D51192FB5E00700E770FB;
 					};
 				};
 			};
@@ -109,6 +151,7 @@
 			projectRoot = "";
 			targets = (
 				512D51192FB5E00700E770FB /* Voco */,
+				AA0000052FB5E00700E770FB /* VocoTests */,
 			);
 		};
 /* End PBXProject section */
@@ -131,7 +174,32 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000042FB5E00700E770FB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		AA00000A2FB5E00700E770FB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 512D51122FB5E00700E770FB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 512D51192FB5E00700E770FB;
+			remoteInfo = Voco;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		AA0000092FB5E00700E770FB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 512D51192FB5E00700E770FB /* Voco */;
+			targetProxy = AA00000A2FB5E00700E770FB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		512D51232FB5E00900E770FB /* Debug */ = {
@@ -335,6 +403,44 @@
 			};
 			name = Release;
 		};
+		AA0000062FB5E00700E770FB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zanishlabs.VocoTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Voco.app/Voco";
+			};
+			name = Debug;
+		};
+		AA0000072FB5E00700E770FB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zanishlabs.VocoTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Voco.app/Voco";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -352,6 +458,15 @@
 			buildConfigurations = (
 				512D51262FB5E00900E770FB /* Debug */,
 				512D51272FB5E00900E770FB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000082FB5E00700E770FB /* Build configuration list for PBXNativeTarget "VocoTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000062FB5E00700E770FB /* Debug */,
+				AA0000072FB5E00700E770FB /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
