@@ -12,6 +12,8 @@ xcuserdata/
 *.ipa
 *.dSYM.zip
 *.dSYM
+# Allow xcframework dSYMs (needed for archive validation)
+!llama.xcframework/**/
 
 ## Playgrounds
 timeline.xctimeline
