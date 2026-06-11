@@ -56,7 +56,7 @@ extension TranslationModel {
             id: "hy-mt2-1.8b-stq", displayName: "Hy-MT2 1.8B",
             description: "1.25-bit STQ1_0. Next-gen 33-language translation.",
             provider: "Tencent",
-            sourceURL: URL(string: "https://huggingface.co/AngelSlim/Hy-MT2-1.8B-1.25Bit-GGUF/resolve/main/Hy-MT2-1.8B-1.25Bit.gguf")!,
+            sourceURL: URL(string: "https://huggingface.co/AngelSlim/Hy-MT2-1.8B-1.25Bit-GGUF/resolve/5946a42/Hy-MT2-1.8B-1.25Bit.gguf")!,
             fileSizeBytes: 461_860_736, supportedLanguages: Language.allCases,
             hfRepo: "AngelSlim/Hy-MT2-1.8B-1.25Bit-GGUF",
             quantization: "1.25-bit STQ1_0", config: .hunyuanMT,
