@@ -10,6 +10,16 @@
 		51BF544A2FB91373003B927B /* SwiftLlama in Frameworks */ = {isa = PBXBuildFile; productRef = CC0312C255D20C80CCD4FF2F /* SwiftLlama */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		AA00000A2FB5E00700E770FB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 512D51122FB5E00700E770FB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 512D51192FB5E00700E770FB;
+			remoteInfo = Voco;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		512D511A2FB5E00700E770FB /* Voco.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Voco.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000012FB5E00700E770FB /* VocoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VocoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -182,16 +192,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXContainerItemProxy section */
-		AA00000A2FB5E00700E770FB /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 512D51122FB5E00700E770FB /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 512D51192FB5E00700E770FB;
-			remoteInfo = Voco;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXTargetDependency section */
 		AA0000092FB5E00700E770FB /* PBXTargetDependency */ = {
