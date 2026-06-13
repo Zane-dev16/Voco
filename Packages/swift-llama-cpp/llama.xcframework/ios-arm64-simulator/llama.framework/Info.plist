@@ -9,6 +9,6 @@
 <key>CFBundlePackageType</key><string>FMWK</string>
 <key>CFBundleShortVersionString</key><string>1.0</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>CFBundleSupportedPlatforms</key><array><string>iPhoneSimulator</string></array>
+<key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
 <key>MinimumOSVersion</key><string>16.4</string>
 </dict></plist>
