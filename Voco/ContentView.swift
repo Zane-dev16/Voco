@@ -12,15 +12,17 @@ import SwiftUI
 struct ContentView: View {
     @State private var lifecycleManager = ModelLifecycleManager()
     @State private var downloadManager = ModelManagerService()
+    @StateObject private var languageRegistry = LanguageRegistry.shared
     @State private var selectedModelID: String = "hy-mt2-1.8b-stq"
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
             TranslateRoot(selectedModelID: $selectedModelID)
-        }
+        }   
         .environment(\.lifecycleManager, lifecycleManager)
         .environment(\.downloadManager, downloadManager)
+        .environmentObject(languageRegistry)
         .onAppear {
             autoActivateModel(selectedModelID)
         }
@@ -43,6 +45,7 @@ struct ContentView: View {
 
 private struct TranslateRoot: View {
     @Binding var selectedModelID: String
+    @FocusState private var isInputFocused: Bool
     @Environment(\.lifecycleManager) private var lifecycleManager
     @Environment(\.downloadManager) private var downloadManager
     @State private var showModelSheet = false
@@ -55,7 +58,7 @@ private struct TranslateRoot: View {
     var body: some View {
         Group {
             if let model = selectedModel, isModelReady(for: model.id) {
-                TranslationView(selectedModelID: $selectedModelID)
+                TranslationView(selectedModelID: $selectedModelID, isInputFocused: $isInputFocused)
             } else if let model = selectedModel {
                 OnboardingView(model: model)
             } else {
@@ -67,8 +70,13 @@ private struct TranslateRoot: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { modelPickerButton }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showSettings = true } label: {
-                    Image(systemName: "gearshape").font(.system(size: 18, weight: .medium)).foregroundStyle(.primary)
+                if isInputFocused {
+                    Button("Done") { isInputFocused = false }
+                        .fontWeight(.semibold)
+                } else {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape").font(.system(size: 18, weight: .medium)).foregroundStyle(.primary)
+                    }
                 }
             }
         }

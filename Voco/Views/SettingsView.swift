@@ -40,7 +40,7 @@ struct SettingsView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showModelSheet) {
             NavigationStack {
                 ModelCatalogView(selectedModelID: $selectedModelID)

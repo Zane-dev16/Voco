@@ -13,8 +13,10 @@ import OSLog
 
 struct TranslationView: View {
     @Binding var selectedModelID: String
+    @FocusState.Binding var isInputFocused: Bool
     @Environment(\.lifecycleManager) private var lifecycleManager
     @Environment(\.downloadManager) private var downloadManager
+    @EnvironmentObject private var languageRegistry: LanguageRegistry
 
     // MARK: - State
 
@@ -30,7 +32,21 @@ struct TranslationView: View {
     @State private var speechService: SpeechService?
     @State private var translationTask: Task<Void, Never>?
     @State private var swapRotation: Double = 0
-    @FocusState private var isInputFocused: Bool
+    @State private var translationComplete: Bool = false
+    @State private var showSourceLanguagePicker = false
+    @State private var showTargetLanguagePicker = false
+
+    // MARK: - Language Capability Helpers
+
+    /// Whether the source language supports offline STT (microphone input).
+    private var sourceSupportsSTT: Bool {
+        languageRegistry.language(forID: sourceLanguage.rawValue)?.supportsOfflineSTT ?? false
+    }
+
+    /// Whether the target language supports offline TTS (speech output).
+    private var targetSupportsTTS: Bool {
+        languageRegistry.language(forID: targetLanguage.rawValue)?.supportsOfflineTTS ?? false
+    }
 
     // MARK: - Services
 
@@ -45,6 +61,11 @@ struct TranslationView: View {
 
     private var canTranslate: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isTranslating
+    }
+
+    /// Button is visually dimmed after translation completes; reappears on input change.
+    private var buttonDimmed: Bool {
+        translationComplete || !canTranslate
     }
 
     // MARK: - Body
@@ -76,6 +97,8 @@ struct TranslationView: View {
                         .padding(.horizontal, 20)
                         .padding(.bottom, 24)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { isInputFocused = false }
             }
             .scrollDismissesKeyboard(.interactively)
             .scrollBounceBehavior(.basedOnSize)
@@ -101,12 +124,17 @@ struct TranslationView: View {
             }
         }
         .onAppear { haptic.prepare() }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { isInputFocused = false }
-                    .fontWeight(.semibold)
-            }
+        .onChange(of: inputText) { _, _ in
+            translationComplete = false
+        }
+        .onChange(of: sourceLanguage) { _, _ in
+            translationComplete = false
+        }
+        .onChange(of: targetLanguage) { _, _ in
+            translationComplete = false
+        }
+        .onChange(of: selectedModelID) { _, _ in
+            translationComplete = false
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [outputText])
@@ -117,33 +145,36 @@ struct TranslationView: View {
 
     private var languageSelector: some View {
         HStack(spacing: 0) {
-            Menu {
-                ForEach(Language.allCases) { lang in
-                    Button {
-                        sourceLanguage = lang
-                    } label: {
-                        HStack {
-                            Text(lang.displayName)
-                            if lang == sourceLanguage {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.blue)
-                            }
-                        }
+            // Source language button
+            Button {
+                showSourceLanguagePicker = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text(sourceLanguage.displayName)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    if !sourceSupportsSTT {
+                        Text("⌨️")
+                            .font(.caption2)
                     }
                 }
-            } label: {
-                Text(sourceLanguage.displayName)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(width: 130, alignment: .center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(.tertiarySystemFill))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
-            .buttonStyle(.plain)
-            .menuStyle(.borderlessButton)
-            .accessibilityLabel("Source language")
+            .sheet(isPresented: $showSourceLanguagePicker) {
+                LanguageSelectionView(
+                    title: "Source Language",
+                    selectedLanguageID: sourceLanguage.rawValue,
+                    onSelect: { lang in
+                        if let legacy = Language(rawValue: lang.id) {
+                            sourceLanguage = legacy
+                        }
+                    }
+                )
+                .environmentObject(languageRegistry)
+            }
 
             Button {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
@@ -161,32 +192,38 @@ struct TranslationView: View {
             .frame(width: 52)
             .accessibilityLabel("Swap languages")
 
-            Menu {
-                ForEach(Language.allCases) { lang in
-                    Button {
-                        targetLanguage = lang
-                    } label: {
-                        HStack {
-                            Text(lang.displayName)
-                            if lang == targetLanguage {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.blue)
-                            }
-                        }
+            // Target language button
+            Button {
+                showTargetLanguagePicker = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text(targetLanguage.displayName)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.blue)
+                        .lineLimit(1)
+                    if !targetSupportsTTS {
+                        Text("⌨️")
+                            .font(.caption2)
                     }
                 }
-            } label: {
-                Text(targetLanguage.displayName)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.blue)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(width: 130, alignment: .center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(.tertiarySystemFill))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .sheet(isPresented: $showTargetLanguagePicker) {
+                LanguageSelectionView(
+                    title: "Target Language",
+                    selectedLanguageID: targetLanguage.rawValue,
+                    onSelect: { lang in
+                        if let legacy = Language(rawValue: lang.id) {
+                            targetLanguage = legacy
+                        }
+                    }
+                )
+                .environmentObject(languageRegistry)
             }
             .buttonStyle(.plain)
-            .menuStyle(.borderlessButton)
             .accessibilityLabel("Target language")
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -216,23 +253,25 @@ struct TranslationView: View {
                 .padding(.top, 16)
 
             HStack(spacing: 16) {
-                // Mic button
-                Button {
-                    toggleRecording()
-                } label: {
-                    Image(systemName: isRecording ? "waveform" : "mic.fill")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(isRecording ? .red : .blue)
-                        .frame(width: 44, height: 44)
-                        .background(
-                            Circle()
-                                .fill(isRecording ? Color.red.opacity(0.12) : Color.blue.opacity(0.12))
-                        )
-                        .clipShape(Circle())
+                // Mic button — only shown if source language supports STT
+                if sourceSupportsSTT {
+                    Button {
+                        toggleRecording()
+                    } label: {
+                        Image(systemName: isRecording ? "waveform" : "mic.fill")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(isRecording ? .red : .blue)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Circle()
+                                    .fill(isRecording ? Color.red.opacity(0.12) : Color.blue.opacity(0.12))
+                            )
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .symbolEffect(.pulse, options: .repeating, value: isRecording)
+                    .accessibilityLabel(isRecording ? "Stop recording" : "Dictate text")
                 }
-                .buttonStyle(.plain)
-                .symbolEffect(.pulse, options: .repeating, value: isRecording)
-                .accessibilityLabel(isRecording ? "Stop recording" : "Dictate text")
 
                 Spacer()
 
@@ -304,17 +343,17 @@ struct TranslationView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
-            .background(canTranslate ? Color.blue : Color.blue.opacity(0.3))
+            .background(buttonDimmed ? Color.blue.opacity(0.3) : Color.blue)
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: 20))
             .shadow(
-                color: canTranslate ? .blue.opacity(0.3) : .clear,
+                color: buttonDimmed ? .clear : .blue.opacity(0.3),
                 radius: 12, y: 6
             )
         }
         .disabled(!canTranslate)
-        .scaleEffect(canTranslate ? 1.0 : 0.97)
-        .animation(.spring(response: 0.2), value: canTranslate)
+        .scaleEffect(buttonDimmed ? 0.97 : 1.0)
+        .animation(.spring(response: 0.2), value: buttonDimmed)
     }
 
     // MARK: - Output Area
@@ -385,8 +424,11 @@ struct TranslationView: View {
 
             // Action bar
             HStack(spacing: 0) {
-                actionButton(icon: "speaker.wave.2.fill", label: "Speak translation", action: speakOutput)
-                Divider().frame(height: 24)
+                // Speaker button — only shown if target language supports TTS
+                if targetSupportsTTS {
+                    actionButton(icon: "speaker.wave.2.fill", label: "Speak translation", action: speakOutput)
+                    Divider().frame(height: 24)
+                }
                 actionButton(icon: "doc.on.doc", label: "Copy translation", action: copyOutput)
                 Divider().frame(height: 24)
                 actionButton(icon: "square.and.arrow.up", label: "Share translation", action: { showShareSheet = true })
@@ -565,6 +607,7 @@ VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
                 if !Task.isCancelled {
                     await MainActor.run {
                         isTranslating = false
+                        translationComplete = true
                         haptic.impactOccurred(intensity: 0.8)
                     }
                 }
@@ -649,7 +692,8 @@ private struct ShareSheet: UIViewControllerRepresentable {
 // MARK: - Preview
 
 #Preview {
-    TranslationView(selectedModelID: .constant("hy-mt2-1.8b-stq"))
+    @FocusState var focused: Bool
+    return TranslationView(selectedModelID: .constant("hy-mt2-1.8b-stq"), isInputFocused: $focused)
         .environment(\.lifecycleManager, ModelLifecycleManager())
         .environment(\.downloadManager, ModelManagerService())
 }

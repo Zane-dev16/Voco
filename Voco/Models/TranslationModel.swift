@@ -22,6 +22,9 @@ struct TranslationModel: Identifiable, Hashable, Sendable {
     let sourceURL: URL
     let fileSizeBytes: Int64
     let supportedLanguages: [Language]
+    /// Language IDs this model supports well. nil = supports all languages.
+    /// Used by LanguageRegistry to filter the language picker.
+    let supportedLanguageCodes: Set<String>?
     let hfRepo: String
     let quantization: String
     let config: ModelConfiguration
@@ -57,7 +60,7 @@ extension TranslationModel {
             description: "1.25-bit STQ1_0. Next-gen 33-language translation.",
             provider: "Tencent",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/Hy-MT2-1.8B-1.25Bit-GGUF/resolve/main/Hy-MT2-1.8B-1.25Bit.gguf")!,
-            fileSizeBytes: 461_860_736, supportedLanguages: Language.allCases,
+            fileSizeBytes: 461_860_736, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/Hy-MT2-1.8B-1.25Bit-GGUF",
             quantization: "1.25-bit STQ1_0", config: .hunyuanMT,
             capability: .simulatorAndDevice, parameterCount: "1.8B",
@@ -77,7 +80,7 @@ extension TranslationModel {
             description: "Q4_K_M quantization for max quality.",
             provider: "Tencent",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/HY-MT1.5-1.8B-GGUF/resolve/main/HY-MT1.5-1.8B-Q4_K_M.gguf")!,
-            fileSizeBytes: 1_133_080_512, supportedLanguages: Language.allCases,
+            fileSizeBytes: 1_133_080_512, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/HY-MT1.5-1.8B-GGUF",
             quantization: "Q4_K_M", config: .hunyuanMT,
             capability: .simulatorAndDevice, parameterCount: "1.8B",
@@ -99,7 +102,7 @@ extension TranslationModel {
             description: "Q8_0 — 1.26 GB, fast.",
             provider: "Meta",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/Llama-3.2-1B-Instruct-Q8_0-gguf/resolve/main/Llama-3.2-1B-Instruct-Q8_0.gguf")!,
-            fileSizeBytes: 1_321_078_496, supportedLanguages: Language.allCases,
+            fileSizeBytes: 1_321_078_496, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/Llama-3.2-1B-Instruct-Q8_0-gguf",
             quantization: "Q8_0", config: .llamaInstruct,
             capability: .deviceRecommended, parameterCount: "1B",
@@ -120,7 +123,7 @@ extension TranslationModel {
             description: "IQ3_M — 1.53 GB.",
             provider: "Meta",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/Llama-3.2-3B-Instruct-IQ3_M-gguf/resolve/main/Llama-3.2-3B-Instruct-IQ3_M.gguf")!,
-            fileSizeBytes: 1_599_664_288, supportedLanguages: Language.allCases,
+            fileSizeBytes: 1_599_664_288, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/Llama-3.2-3B-Instruct-IQ3_M-gguf",
             quantization: "IQ3_M", config: .llamaInstruct,
             capability: .deviceRecommended, parameterCount: "3B",
@@ -143,7 +146,7 @@ extension TranslationModel {
             description: "Q8_0 — 795 MB, all devices.",
             provider: "Qwen",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/qwen3.5-0.8b-q8_0-gguf/resolve/main/qwen3.5-0.8b-q8_0.gguf")!,
-            fileSizeBytes: 833_591_648, supportedLanguages: Language.allCases,
+            fileSizeBytes: 833_591_648, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/qwen3.5-0.8b-q8_0-gguf",
             quantization: "Q8_0", config: .qwenInstruct,
             capability: .simulatorAndDevice, parameterCount: "0.8B",
@@ -163,7 +166,7 @@ extension TranslationModel {
             description: "Q4_K_M — 1.25 GB, sweet spot.",
             provider: "Qwen",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/qwen3.5-2b-q4_k_m-gguf/resolve/main/qwen3.5-2b-q4_k_m.gguf")!,
-            fileSizeBytes: 1_312_164_192, supportedLanguages: Language.allCases,
+            fileSizeBytes: 1_312_164_192, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/qwen3.5-2b-q4_k_m-gguf",
             quantization: "Q4_K_M", config: .qwenInstruct,
             capability: .deviceRecommended, parameterCount: "2B",
@@ -183,7 +186,7 @@ extension TranslationModel {
             description: "Q4_K_M — 2.65 GB, max Qwen quality.",
             provider: "Qwen",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/qwen3.5-4b-q4_k_m-gguf/resolve/main/qwen3.5-4b-q4_k_m.gguf")!,
-            fileSizeBytes: 2_783_446_240, supportedLanguages: Language.allCases,
+            fileSizeBytes: 2_783_446_240, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/qwen3.5-4b-q4_k_m-gguf",
             quantization: "Q4_K_M", config: .qwen4bInstruct,
             capability: .deviceRecommended, parameterCount: "4B",
@@ -205,7 +208,7 @@ extension TranslationModel {
             description: "Q4_K_M — 3.27 GB.",
             provider: "Google",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/gemma-4-E2B-it-Q4_K_M-gguf/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf")!,
-            fileSizeBytes: 3_427_861_088, supportedLanguages: Language.allCases,
+            fileSizeBytes: 3_427_861_088, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/gemma-4-E2B-it-Q4_K_M-gguf",
             quantization: "Q4_K_M", config: .gemma4Raw,
             capability: .deviceRecommended, parameterCount: "2B",
@@ -225,7 +228,7 @@ extension TranslationModel {
             description: "Q4_K_M — 5.09 GB.",
             provider: "Google",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/gemma-4-E4B-it-Q4_K_M-gguf/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf")!,
-            fileSizeBytes: 5_335_273_056, supportedLanguages: Language.allCases,
+            fileSizeBytes: 5_335_273_056, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/gemma-4-E4B-it-Q4_K_M-gguf",
             quantization: "Q4_K_M", config: .gemma4Raw,
             capability: .deviceRecommended, parameterCount: "4B",
@@ -245,7 +248,7 @@ extension TranslationModel {
             description: "Q2_K — 1.65 GB, translation specialist.",
             provider: "Google",
             sourceURL: URL(string: "https://huggingface.co/zanish-labs/translategemma-4b-it-Q2_K-gguf/resolve/main/translategemma-4b-it-Q2_K.gguf")!,
-            fileSizeBytes: 1_729_180_160, supportedLanguages: Language.allCases,
+            fileSizeBytes: 1_729_180_160, supportedLanguages: Language.allCases, supportedLanguageCodes: nil,
             hfRepo: "zanish-labs/translategemma-4b-it-Q2_K-gguf",
             quantization: "Q2_K", config: .gemmaInstruct,
             capability: .deviceRecommended, parameterCount: "4B",

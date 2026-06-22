@@ -37,18 +37,29 @@ enum PromptBuilder {
 
     /// Formats a raw prompt by substituting language and text placeholders.
     /// Used for models with custom prompt formats (Tencent, Gemma 4, NLLB).
+    /// Uses LanguageRegistry for model-specific language name resolution.
     static func formatRawPrompt(
         text: String,
         sourceLanguage: String,
         targetLanguage: String,
-        config: ModelConfiguration
+        config: ModelConfiguration,
+        registry: LanguageRegistry? = nil
     ) -> String {
         let resolvedTarget: String
         let resolvedSource: String
-        if config == .nllbTranslate {
+
+        if let registry = registry,
+           let sourceLang = registry.language(byName: sourceLanguage),
+           let targetLang = registry.language(byName: targetLanguage) {
+            // Use LanguageRegistry for model-specific resolution
+            resolvedSource = registry.sourceLanguageName(for: sourceLang, config: config)
+            resolvedTarget = registry.languageName(for: targetLang, config: config)
+        } else if config == .nllbTranslate {
+            // Fallback: legacy Language enum lookup for NLLB
             resolvedSource = Language.find(byCode: sourceLanguage)?.code ?? "en"
             resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.code ?? "es"
         } else {
+            // Fallback: legacy Language enum lookup for Hunyuan
             resolvedSource = sourceLanguage
             resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.hunyuanTargetName ?? targetLanguage
         }

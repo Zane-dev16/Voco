@@ -59,7 +59,7 @@ struct ModelCatalogView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Model Library")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { dismiss() }
