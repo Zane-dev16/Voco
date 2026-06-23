@@ -21,7 +21,6 @@ struct SupportedLanguage: Identifiable, Hashable, Comparable {
     let promptName: String   // Name injected into LLM prompts (e.g., "Spanish")
     let flag: String         // Flag emoji
     let hunyuanName: String? // Tencent Hunyuan-specific name, nil if unsupported
-    let nllbCode: String?    // NLLB-200 language code, nil if unsupported
 
     /// Runtime-detected: source language has offline STT voice pack.
     var supportsOfflineSTT: Bool = false
@@ -80,83 +79,83 @@ final class LanguageRegistry: ObservableObject {
 
         // Helper to add a language
         func add(_ id: String, _ name: String, _ flag: String,
-                 hunyuan: String? = nil, nllb: String? = nil) {
+                 hunyuan: String? = nil) {
             list.append(SupportedLanguage(
                 id: id, displayName: name, promptName: name,
-                flag: flag, hunyuanName: hunyuan, nllbCode: nllb
+                flag: flag, hunyuanName: hunyuan
             ))
         }
 
         // --- European Languages ---
-        add("en", "English", "\u{1F1EC}\u{1F1E7}", hunyuan: "English", nllb: "eng_Latn")
-        add("es", "Spanish", "\u{1F1EA}\u{1F1F8}", hunyuan: "Spanish", nllb: "spa_Latn")
-        add("fr", "French", "\u{1F1EB}\u{1F1F7}", hunyuan: "French", nllb: "fra_Latn")
-        add("de", "German", "\u{1F1E9}\u{1F1EA}", hunyuan: "German", nllb: "deu_Latn")
-        add("it", "Italian", "\u{1F1EE}\u{1F1F9}", hunyuan: "Italian", nllb: "ita_Latn")
-        add("pt", "Portuguese", "\u{1F1E7}\u{1F1F7}", hunyuan: "Portuguese", nllb: "por_Latn")
-        add("nl", "Dutch", "\u{1F1F3}\u{1F1F1}", nllb: "nld_Latn")
-        add("pl", "Polish", "\u{1F1F5}\u{1F1F1}", nllb: "pol_Latn")
-        add("ru", "Russian", "\u{1F1F7}\u{1F1FA}", hunyuan: "Russian", nllb: "rus_Cyrl")
-        add("uk", "Ukrainian", "\u{1F1FA}\u{1F1E6}", nllb: "ukr_Cyrl")
-        add("ro", "Romanian", "\u{1F1F7}\u{1F1F4}", nllb: "ron_Latn")
-        add("cs", "Czech", "\u{1F1E8}\u{1F1FF}", nllb: "ces_Latn")
-        add("sv", "Swedish", "\u{1F1F8}\u{1F1EA}", nllb: "swe_Latn")
-        add("da", "Danish", "\u{1F1E9}\u{1F1F0}", nllb: "dan_Latn")
-        add("fi", "Finnish", "\u{1F1EB}\u{1F1EE}", nllb: "fin_Latn")
-        add("nb", "Norwegian", "\u{1F1F3}\u{1F1F4}", nllb: "nob_Latn")
-        add("el", "Greek", "\u{1F1EC}\u{1F1F7}", nllb: "ell_Grek")
-        add("hu", "Hungarian", "\u{1F1ED}\u{1F1FA}", nllb: "hun_Latn")
-        add("bg", "Bulgarian", "\u{1F1E7}\u{1F1EC}", nllb: "bul_Cyrl")
-        add("sr", "Serbian", "\u{1F1F7}\u{1F1F8}", nllb: "srp_Cyrl")
-        add("hr", "Croatian", "\u{1F1ED}\u{1F1F7}", nllb: "hrv_Latn")
-        add("sk", "Slovak", "\u{1F1F8}\u{1F1F0}", nllb: "slk_Latn")
-        add("sl", "Slovenian", "\u{1F1F8}\u{1F1EE}", nllb: "slv_Latn")
-        add("et", "Estonian", "\u{1F1EA}\u{1F1EA}", nllb: "est_Latn")
-        add("lv", "Latvian", "\u{1F1F1}\u{1F1FB}", nllb: "lvs_Latn")
-        add("lt", "Lithuanian", "\u{1F1F1}\u{1F1F9}", nllb: "lit_Latn")
-        add("tr", "Turkish", "\u{1F1F9}\u{1F1F7}", nllb: "tur_Latn")
-        add("ca", "Catalan", "\u{1F1E8}\u{1F1F4}", nllb: "cat_Latn")
-        add("gl", "Galician", "\u{1F1EC}\u{1F1FA}", nllb: "glg_Latn")
+        add("en", "English", "\u{1F1EC}\u{1F1E7}", hunyuan: "English")
+        add("es", "Spanish", "\u{1F1EA}\u{1F1F8}", hunyuan: "Spanish")
+        add("fr", "French", "\u{1F1EB}\u{1F1F7}", hunyuan: "French")
+        add("de", "German", "\u{1F1E9}\u{1F1EA}", hunyuan: "German")
+        add("it", "Italian", "\u{1F1EE}\u{1F1F9}", hunyuan: "Italian")
+        add("pt", "Portuguese", "\u{1F1E7}\u{1F1F7}", hunyuan: "Portuguese")
+        add("nl", "Dutch", "\u{1F1F3}\u{1F1F1}")
+        add("pl", "Polish", "\u{1F1F5}\u{1F1F1}")
+        add("ru", "Russian", "\u{1F1F7}\u{1F1FA}", hunyuan: "Russian")
+        add("uk", "Ukrainian", "\u{1F1FA}\u{1F1E6}")
+        add("ro", "Romanian", "\u{1F1F7}\u{1F1F4}")
+        add("cs", "Czech", "\u{1F1E8}\u{1F1FF}")
+        add("sv", "Swedish", "\u{1F1F8}\u{1F1EA}")
+        add("da", "Danish", "\u{1F1E9}\u{1F1F0}")
+        add("fi", "Finnish", "\u{1F1EB}\u{1F1EE}")
+        add("nb", "Norwegian", "\u{1F1F3}\u{1F1F4}")
+        add("el", "Greek", "\u{1F1EC}\u{1F1F7}")
+        add("hu", "Hungarian", "\u{1F1ED}\u{1F1FA}")
+        add("bg", "Bulgarian", "\u{1F1E7}\u{1F1EC}")
+        add("sr", "Serbian", "\u{1F1F7}\u{1F1F8}")
+        add("hr", "Croatian", "\u{1F1ED}\u{1F1F7}")
+        add("sk", "Slovak", "\u{1F1F8}\u{1F1F0}")
+        add("sl", "Slovenian", "\u{1F1F8}\u{1F1EE}")
+        add("et", "Estonian", "\u{1F1EA}\u{1F1EA}")
+        add("lv", "Latvian", "\u{1F1F1}\u{1F1FB}")
+        add("lt", "Lithuanian", "\u{1F1F1}\u{1F1F9}")
+        add("tr", "Turkish", "\u{1F1F9}\u{1F1F7}")
+        add("ca", "Catalan", "\u{1F1E8}\u{1F1F4}")
+        add("gl", "Galician", "\u{1F1EC}\u{1F1FA}")
 
         // --- Asian Languages ---
-        add("zh", "Chinese (Simplified)", "\u{1F1E8}\u{1F1F3}", hunyuan: "Chinese", nllb: "zho_Hans")
-        add("zh-TW", "Chinese (Traditional)", "\u{1F1F9}\u{1F1FC}", nllb: "zho_Hant")
-        add("ja", "Japanese", "\u{1F1EF}\u{1F1F5}", hunyuan: "Japanese", nllb: "jpn_Jpan")
-        add("ko", "Korean", "\u{1F1F0}\u{1F1F7}", hunyuan: "Korean", nllb: "kor_Hang")
-        add("th", "Thai", "\u{1F1F9}\u{1F1ED}", nllb: "tha_Thai")
-        add("vi", "Vietnamese", "\u{1F1FB}\u{1F1F3}", nllb: "vie_Latn")
-        add("id", "Indonesian", "\u{1F1EE}\u{1F1E9}", nllb: "ind_Latn")
-        add("ms", "Malay", "\u{1F1F2}\u{1F1FE}", nllb: "zsm_Latn")
-        add("tl", "Filipino", "\u{1F1F5}\u{1F1ED}", nllb: "tgl_Latn")
-        add("my", "Burmese", "\u{1F1E7}\u{1F1F2}", nllb: "mya_Mymr")
-        add("km", "Khmer", "\u{1F1F0}\u{1F1ED}", nllb: "khm_Khmr")
-        add("lo", "Lao", "\u{1F1F1}\u{1F1E6}", nllb: "lao_Laoo")
+        add("zh", "Chinese (Simplified)", "\u{1F1E8}\u{1F1F3}", hunyuan: "Chinese")
+        add("zh-TW", "Chinese (Traditional)", "\u{1F1F9}\u{1F1FC}")
+        add("ja", "Japanese", "\u{1F1EF}\u{1F1F5}", hunyuan: "Japanese")
+        add("ko", "Korean", "\u{1F1F0}\u{1F1F7}", hunyuan: "Korean")
+        add("th", "Thai", "\u{1F1F9}\u{1F1ED}")
+        add("vi", "Vietnamese", "\u{1F1FB}\u{1F1F3}")
+        add("id", "Indonesian", "\u{1F1EE}\u{1F1E9}")
+        add("ms", "Malay", "\u{1F1F2}\u{1F1FE}")
+        add("tl", "Filipino", "\u{1F1F5}\u{1F1ED}")
+        add("my", "Burmese", "\u{1F1E7}\u{1F1F2}")
+        add("km", "Khmer", "\u{1F1F0}\u{1F1ED}")
+        add("lo", "Lao", "\u{1F1F1}\u{1F1E6}")
 
         // --- South Asian Languages ---
-        add("hi", "Hindi", "\u{1F1EE}\u{1F1F3}", hunyuan: "Hindi", nllb: "hin_Deva")
-        add("bn", "Bengali", "\u{1F1E7}\u{1F1E9}", nllb: "ben_Beng")
-        add("ta", "Tamil", "\u{1F1F9}\u{1F1F1}", nllb: "tam_Taml")
-        add("te", "Telugu", "\u{1F1F9}\u{1F1F0}", nllb: "tel_Telu")
-        add("mr", "Marathi", "\u{1F1F2}\u{1F1F8}", nllb: "mar_Deva")
-        add("ur", "Urdu", "\u{1F1FA}\u{1F1F2}", nllb: "urd_Arab")
-        add("gu", "Gujarati", "\u{1F1EC}\u{1F1F2}", nllb: "guj_Gujr")
-        add("kn", "Kannada", "\u{1F1F0}\u{1F1F3}", nllb: "kan_Knda")
-        add("ml", "Malayalam", "\u{1F1F2}\u{1F1F1}", nllb: "mal_Mlym")
-        add("pa", "Punjabi", "\u{1F1F5}\u{1F1F0}", nllb: "pan_Guru")
-        add("ne", "Nepali", "\u{1F1F3}\u{1F1F5}", nllb: "npi_Deva")
-        add("si", "Sinhala", "\u{1F1F1}\u{1F1F0}", nllb: "sin_Sinh")
+        add("hi", "Hindi", "\u{1F1EE}\u{1F1F3}", hunyuan: "Hindi")
+        add("bn", "Bengali", "\u{1F1E7}\u{1F1E9}")
+        add("ta", "Tamil", "\u{1F1F9}\u{1F1F1}")
+        add("te", "Telugu", "\u{1F1F9}\u{1F1F0}")
+        add("mr", "Marathi", "\u{1F1F2}\u{1F1F8}")
+        add("ur", "Urdu", "\u{1F1FA}\u{1F1F2}")
+        add("gu", "Gujarati", "\u{1F1EC}\u{1F1F2}")
+        add("kn", "Kannada", "\u{1F1F0}\u{1F1F3}")
+        add("ml", "Malayalam", "\u{1F1F2}\u{1F1F1}")
+        add("pa", "Punjabi", "\u{1F1F5}\u{1F1F0}")
+        add("ne", "Nepali", "\u{1F1F3}\u{1F1F5}")
+        add("si", "Sinhala", "\u{1F1F1}\u{1F1F0}")
 
         // --- Middle Eastern & African Languages ---
-        add("ar", "Arabic", "\u{1F1F8}\u{1F1E6}", hunyuan: "Arabic", nllb: "arb_Arab")
-        add("he", "Hebrew", "\u{1F1EE}\u{1F1F1}", nllb: "heb_Hebr")
-        add("fa", "Persian", "\u{1F1EE}\u{1F1F7}", nllb: "pes_Arab")
-        add("sw", "Swahili", "\u{1F1F8}\u{1F1FF}", nllb: "swh_Latn")
-        add("am", "Amharic", "\u{1F1EA}\u{1F1F9}", nllb: "amh_Ethi")
-        add("yo", "Yoruba", "\u{1F1F3}\u{1F1EC}", nllb: "yor_Latn")
-        add("ig", "Igbo", "\u{1F1EE}\u{1F1EC}", nllb: "ibo_Latn")
-        add("ha", "Hausa", "\u{1F1ED}\u{1F1F3}", nllb: "hau_Latn")
-        add("zu", "Zulu", "\u{1F1FF}\u{1F1E6}", nllb: "zul_Latn")
-        add("af", "Afrikaans", "\u{1F1E6}\u{1F1FF}", nllb: "afr_Latn")
+        add("ar", "Arabic", "\u{1F1F8}\u{1F1E6}", hunyuan: "Arabic")
+        add("he", "Hebrew", "\u{1F1EE}\u{1F1F1}")
+        add("fa", "Persian", "\u{1F1EE}\u{1F1F7}")
+        add("sw", "Swahili", "\u{1F1F8}\u{1F1FF}")
+        add("am", "Amharic", "\u{1F1EA}\u{1F1F9}")
+        add("yo", "Yoruba", "\u{1F1F3}\u{1F1EC}")
+        add("ig", "Igbo", "\u{1F1EE}\u{1F1EC}")
+        add("ha", "Hausa", "\u{1F1ED}\u{1F1F3}")
+        add("zu", "Zulu", "\u{1F1FF}\u{1F1E6}")
+        add("af", "Afrikaans", "\u{1F1E6}\u{1F1FF}")
 
         return list.sorted()
     }
@@ -241,22 +240,16 @@ final class LanguageRegistry: ObservableObject {
     }
 
     /// Get the appropriate language name for a given model config.
-    /// Returns the model-specific name (hunyuanName, nllbCode, or promptName).
+    /// Returns the model-specific name (hunyuanName or promptName).
     func languageName(for lang: SupportedLanguage, config: ModelConfiguration) -> String {
         if config == .hunyuanMT, let hunyuan = lang.hunyuanName {
             return hunyuan
-        }
-        if config == .nllbTranslate, let nllb = lang.nllbCode {
-            return nllb
         }
         return lang.promptName
     }
 
     /// Get the appropriate source language name for a given model config.
     func sourceLanguageName(for lang: SupportedLanguage, config: ModelConfiguration) -> String {
-        if config == .nllbTranslate, let nllb = lang.nllbCode {
-            return nllb
-        }
         return lang.promptName
     }
 
