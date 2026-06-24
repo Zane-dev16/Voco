@@ -157,6 +157,12 @@ final class LanguageRegistry: ObservableObject {
         add("zu", "Zulu", "\u{1F1FF}\u{1F1E6}")
         add("af", "Afrikaans", "\u{1F1E6}\u{1F1FF}")
 
+        // --- Central Asian Languages (Hy-MT2) ---
+        add("bo", "Tibetan", "\u{1F1AD}\u{1F1F0}")
+        add("kk", "Kazakh", "\u{1F1F0}\u{1F1FF}")
+        add("mn", "Mongolian", "\u{1F1F2}\u{1F1F3}")
+        add("ug", "Uyghur", "\u{1F1FA}\u{1F1EC}")
+
         return list.sorted()
     }
 

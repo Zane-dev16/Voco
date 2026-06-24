@@ -116,10 +116,11 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
     )
 
     /// Tencent Hy-MT1.5 — raw SentencePiece prompt format.
+    /// Official format: single BOS token, no system prompt placeholder.
     static let hunyuanMT = ModelConfiguration(prompt: PromptConfig(
         strategy: .raw,
         systemPrompt: "",
-        userPromptTemplate: "<｜hy_begin▁of▁sentence｜><｜hy_place▁holder▁no▁3｜>\n<｜hy_begin▁of▁sentence｜>\n<｜hy_User｜>Translate the following segment into {target}, without additional explanation.\n\n{text}\n<｜hy_Assistant｜>"
+        userPromptTemplate: "<｜hy_begin▁of▁sentence｜>\n<｜hy_User｜>Translate the following segment into {target}, without additional explanation.\n\n{text}\n<｜hy_Assistant｜>"
     ), runtime: cpuOnlyMedium)
 
     /// Llama 3.2 Instruct.
