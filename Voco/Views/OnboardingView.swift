@@ -96,6 +96,7 @@ struct OnboardingView: View {
                     ProgressView(value: downloadProgress)
                         .tint(model.providerColor)
                         .padding(.horizontal, 32)
+                        .accessibilityLabel("Downloading \(model.displayName)")
                         .accessibilityValue("\(Int(downloadProgress * 100)) percent")
 
                     Text("\(formattedDownloadedBytes) of \(model.formattedSize)")
@@ -110,6 +111,9 @@ struct OnboardingView: View {
                 errorBanner(message: errorMessage)
                     .padding(.horizontal, 32)
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    .onAppear {
+                        UIAccessibility.post(notification: .announcement, argument: errorMessage)
+                    }
             }
 
             // Legal
@@ -198,6 +202,9 @@ struct OnboardingView: View {
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
                     showSuccess = true
                 }
+                // VoiceOver users otherwise never learn the engine finished preparing.
+                UIAccessibility.post(notification: .announcement,
+                                     argument: "\(model.displayName) ready")
                 try? await Task.sleep(nanoseconds: 800_000_000)
             } catch is CancellationError {
                 isActivating = false
@@ -215,11 +222,15 @@ struct OnboardingView: View {
 
     private func errorBanner(message: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Error: \(message)")
             Spacer()
             Button {
                 withAnimation(.spring(response: 0.3)) {
@@ -229,7 +240,11 @@ struct OnboardingView: View {
                 Image(systemName: "xmark")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
         }
         .padding(14)
         .background(
@@ -240,7 +255,5 @@ struct OnboardingView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.orange.opacity(0.2), lineWidth: 1)
         )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Error: \(message)")
     }
 }

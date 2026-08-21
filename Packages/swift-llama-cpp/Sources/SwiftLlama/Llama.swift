@@ -139,7 +139,7 @@ final actor Llama {
         let effectiveAddBos = addBos ?? model.shouldAddBos()
         let tokenList = model.tokenize(text: text, addBos: effectiveAddBos, special: true)
         guard tokenList.count < maxTokenCount - 4 else {
-            throw LlamaError.contextSizeLimitExeeded
+            throw LlamaError.contextSizeLimitExceeded
         }
 
         if tokenList.starts(with: processedTokens) {

@@ -19,15 +19,10 @@ struct ModelRegistryTests {
         #expect(ids.count == unique.count, "Duplicate IDs found")
     }
 
-    @Test("SHA-256 hashes are populated (except known deferred models)")
+    @Test("SHA-256 hashes are populated")
     func sha256Populated() {
-        let deferred: Set<String> = ["hy-mt1.5-1.8b-q4km"] // hash pending latte download
         for model in models {
-            if deferred.contains(model.id) {
-                #expect(model.sha256.isEmpty, "\(model.id) is expected to have empty sha256 (deferred)")
-            } else {
-                #expect(!model.sha256.isEmpty, "\(model.id) has empty sha256")
-            }
+            #expect(!model.sha256.isEmpty, "\(model.id) has empty sha256")
         }
     }
 

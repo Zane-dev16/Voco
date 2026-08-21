@@ -93,8 +93,11 @@ struct SettingsView: View {
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(.green)
                         }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Status: active")
                     }
                 }
+                .accessibilityElement(children: .combine)
             } else {
                 HStack(spacing: 12) {
                     Image(systemName: "cpu")
@@ -161,9 +164,16 @@ struct SettingsView: View {
                     }
                 }
             }
-            .buttonStyle(.plain)
+            // borderless (not plain) keeps this button's tap area scoped to its
+            // label instead of the whole List row, so the delete button stays reachable.
+            .buttonStyle(.borderless)
+            .accessibilityHint("Activates this model for translation")
             Button(role: .destructive) { confirmDelete(model) } label: {
-                Image(systemName: "trash").font(.caption).foregroundStyle(.red)
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .accessibilityLabel("Delete \(model.displayName)")
@@ -256,6 +266,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
             .padding(.vertical, 2)
 
             NavigationLink {
@@ -273,7 +284,7 @@ struct SettingsView: View {
         } footer: {
             Text("Voco · Offline Translation")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 8)
         }

@@ -159,6 +159,7 @@ struct ModelCatalogView: View {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                         showActivateError = true
                     }
+                    UIAccessibility.post(notification: .announcement, argument: activationErrorMessage)
                 }
                 return
             }
@@ -168,6 +169,9 @@ struct ModelCatalogView: View {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                     showActivateSuccess = true
                 }
+                // VoiceOver users can't see transient toasts — announce them.
+                UIAccessibility.post(notification: .announcement,
+                                     argument: "\(model.displayName) is ready")
             }
         }
     }
@@ -262,41 +266,54 @@ private struct ModelCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(model.displayName)
-                            .font(.subheadline.bold())
+            // Header is a real Button so VoiceOver users get a proper activate
+            // action for selection (the card-level onTapGesture isn't exposed to VO).
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(model.displayName)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
 
-                        if isActive {
-                            StatusDot(color: .green)
-                                .accessibilityLabel("Active")
-                        } else if isSelected {
-                            StatusDot(color: .blue)
-                                .accessibilityLabel("Selected")
+                            if isActive {
+                                StatusDot(color: .green)
+                                    .accessibilityHidden(true)
+                            } else if isSelected {
+                                StatusDot(color: .blue)
+                                    .accessibilityHidden(true)
+                            }
                         }
+
+                        HStack(spacing: 6) {
+                            Badge(text: model.quantization, color: model.providerColor)
+                            Badge(text: model.formattedSize, color: .secondary)
+                            if model.id == "hy-mt2-1.8b-stq" {
+                                Badge(text: "Recommended", color: .orange)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
                     }
 
-                    HStack(spacing: 6) {
-                        Badge(text: model.quantization, color: model.providerColor)
-                        Badge(text: model.formattedSize, color: .secondary)
-                        if model.id == "hy-mt2-1.8b-stq" {
-                            Badge(text: "Recommended", color: .orange)
-                        }
+                    Spacer()
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.blue)
+                            .font(.title3)
+                            .symbolEffect(.bounce, options: .nonRepeating, value: isSelected)
+                            .accessibilityHidden(true)
                     }
                 }
-
-                Spacer()
-
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.blue)
-                        .font(.title3)
-                        .symbolEffect(.bounce, options: .nonRepeating, value: isSelected)
-                }
+                .padding(14)
+                .background(cardBackground)
             }
-            .padding(14)
-            .background(cardBackground)
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+            .accessibilityHint(isActive ? "Currently active model"
+                               : isDownloaded ? "Activates this model"
+                               : "Selects this model for download")
 
             HStack(spacing: 0) {
                 actionBarContent
@@ -373,15 +390,21 @@ private struct ModelCard: View {
                 ProgressView(value: progress)
                     .tint(model.providerColor)
                     .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Downloading \(model.displayName)")
+                    .accessibilityValue("\(Int(progress * 100)) percent")
                 Text("\(Int(progress * 100))%")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(width: 36)
+                    .accessibilityHidden(true)
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.red.opacity(0.7))
+                        .foregroundStyle(.red)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Cancel download")
                 .padding(.trailing, 14)
             }
             .padding(.horizontal, 14)
@@ -459,6 +482,7 @@ private struct ModelCard: View {
 private struct StatusDot: View {
     let color: Color
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Circle()
@@ -471,10 +495,12 @@ private struct StatusDot: View {
                     .opacity(pulse ? 0 : 0.6)
             )
             .onAppear {
+                guard !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
                     pulse = true
                 }
             }
+            .accessibilityHidden(true)
     }
 }
 
@@ -498,6 +524,7 @@ private struct ToastView: View {
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
         .padding(.top, 8)
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -28,8 +28,11 @@ See [MODEL_REGISTRY.md](MODEL_REGISTRY.md) for the full catalog.
 ```bash
 git clone https://github.com/Zane-dev16/Voco.git
 cd Voco
-xcodebuild -scheme Voco -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcodebuild -scheme Voco -destination 'platform=iOS Simulator,name=iPhone' build
 ```
+
+Replace `iPhone` with any installed simulator — list them with
+`xcrun simctl list devices available`.
 
 The project uses a local Swift package at `Packages/swift-llama-cpp/` wrapping
 a custom `llama.cpp` build (PR #22836, STQ1_0 kernel). No additional dependencies.

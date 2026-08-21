@@ -9,7 +9,7 @@ import Foundation
 
 public enum LlamaError: Error, LocalizedError {
     case couldNotInitializeContext
-    case contextSizeLimitExeeded
+    case contextSizeLimitExceeded
     case decodingError
     case emptyMessageArray
 
@@ -17,7 +17,7 @@ public enum LlamaError: Error, LocalizedError {
         switch self {
         case .couldNotInitializeContext:
             return "Not enough memory to load the model. Close other apps and try again."
-        case .contextSizeLimitExeeded:
+        case .contextSizeLimitExceeded:
             return "Input text is too long for the model to process."
         case .decodingError:
             return "The model encountered an error during generation. Try again."

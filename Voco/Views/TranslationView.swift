@@ -36,6 +36,13 @@ struct TranslationView: View {
     @State private var showSourceLanguagePicker = false
     @State private var showTargetLanguagePicker = false
 
+    /// Dynamic Type scaling for the large rounded input/output text.
+    @ScaledMetric(relativeTo: .largeTitle) private var workspaceTextSize: CGFloat = 22
+    /// Tracks the length at which the output last auto-scrolled, so we don't
+    /// fire an animated scroll (and disturb VoiceOver) on every stream chunk.
+    @State private var lastAutoScrollLength = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // MARK: - Language Capability Helpers
 
     /// Whether the source language supports offline STT (microphone input).
@@ -156,6 +163,7 @@ struct TranslationView: View {
                     if !sourceSupportsSTT {
                         Text("⌨️")
                             .font(.caption2)
+                            .accessibilityHidden(true)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -163,6 +171,10 @@ struct TranslationView: View {
                 .background(Color(.tertiarySystemFill))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Source language")
+            .accessibilityValue(sourceSupportsSTT ? sourceLanguage.displayName : "\(sourceLanguage.displayName), typing only")
+            .accessibilityHint("Changes the language text is translated from")
             .sheet(isPresented: $showSourceLanguagePicker) {
                 LanguageSelectionView(
                     title: "Source Language",
@@ -185,12 +197,14 @@ struct TranslationView: View {
                 Image(systemName: "arrow.left.arrow.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.blue)
-                    .frame(width: 36, height: 36)
+                    .frame(minWidth: 44, minHeight: 44)
                     .rotationEffect(.degrees(swapRotation))
             }
             .buttonStyle(.plain)
             .frame(width: 52)
             .accessibilityLabel("Swap languages")
+            .accessibilityValue("\(sourceLanguage.displayName) to \(targetLanguage.displayName)")
+            .accessibilityHint("Swaps the source and target languages")
 
             // Target language button
             Button {
@@ -204,6 +218,7 @@ struct TranslationView: View {
                     if !targetSupportsTTS {
                         Text("⌨️")
                             .font(.caption2)
+                            .accessibilityHidden(true)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -225,6 +240,8 @@ struct TranslationView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Target language")
+            .accessibilityValue(targetSupportsTTS ? targetLanguage.displayName : "\(targetLanguage.displayName), no voice output")
+            .accessibilityHint("Changes the language text is translated to")
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.vertical, 12)
@@ -235,15 +252,17 @@ struct TranslationView: View {
     private var inputArea: some View {
         VStack(alignment: .leading, spacing: 0) {
             TextEditor(text: $inputText)
-                .font(.system(size: 22, weight: .regular, design: .rounded))
+                .font(.system(size: workspaceTextSize, weight: .regular, design: .rounded))
                 .focused($isInputFocused)
                 .scrollContentBackground(.hidden)
-                .frame(height: 140)
+                // minHeight instead of fixed height so input isn't clipped
+                // at large Dynamic Type sizes.
+                .frame(minHeight: 140)
                 .accessibilityLabel("Text to translate")
                 .overlay(alignment: .topLeading) {
                     if inputText.isEmpty {
                         Text("Enter text to translate...")
-                            .font(.system(size: 22, weight: .regular, design: .rounded))
+                            .font(.system(size: workspaceTextSize, weight: .regular, design: .rounded))
                             .foregroundStyle(.tertiary)
                             .padding(.top, 8)
                             .allowsHitTesting(false)
@@ -290,7 +309,7 @@ struct TranslationView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(.tertiary)
-                            .frame(width: 36, height: 36)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear text")
@@ -305,7 +324,7 @@ struct TranslationView: View {
                         Image(systemName: "doc.on.clipboard")
                             .font(.system(size: 18))
                             .foregroundStyle(.blue)
-                            .frame(width: 36, height: 36)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Paste from clipboard")
@@ -406,16 +425,23 @@ struct TranslationView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(outputText)
-                        .font(.system(size: 22, weight: .medium, design: .rounded))
+                        .font(.system(size: workspaceTextSize, weight: .medium, design: .rounded))
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .lineSpacing(6)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 20)
                         .id("output-end")
+                        // VoiceOver reads the full translation when focused;
+                        // completion is announced separately in performTranslation().
+                        .accessibilityLabel(outputText)
                 }
-                .onChange(of: outputText) { _, _ in
-                    withAnimation(.easeOut(duration: 0.2)) {
+                .onChange(of: outputText) { _, newText in
+                    // Throttle auto-scroll so streaming chunks don't fire an
+                    // animated scroll (and shift focus) on every token.
+                    guard abs(newText.count - lastAutoScrollLength) >= 40 || newText.count < 40 else { return }
+                    lastAutoScrollLength = newText.count
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                         proxy.scrollTo("output-end", anchor: .bottom)
                     }
                 }
@@ -453,11 +479,15 @@ struct TranslationView: View {
 
     private func errorBanner(message: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Error: \(message)")
             Spacer()
             Button {
                 withAnimation(.spring(response: 0.3)) {
@@ -467,7 +497,11 @@ struct TranslationView: View {
                 Image(systemName: "xmark")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
         }
         .padding(14)
         .background(
@@ -497,6 +531,8 @@ struct TranslationView: View {
 
     private func copyOutput() {
         UIPasteboard.general.string = outputText
+        UIAccessibility.post(notification: .announcement,
+                             argument: NSLocalizedString("Copied to clipboard", comment: "Copy confirmation"))
         withAnimation(.spring(response: 0.3)) {
             showCopyToast = true
         }
@@ -609,6 +645,9 @@ VocoLog.speech.error("[TranslationView] Speech error: \(error)")
                         isTranslating = false
                         translationComplete = true
                         haptic.impactOccurred(intensity: 0.8)
+                        // VoiceOver: announce once at completion rather than per chunk.
+                        UIAccessibility.post(notification: .announcement,
+                                             argument: NSLocalizedString("Translation complete", comment: "Streaming finished"))
                     }
                 }
             } catch is CancellationError {
@@ -640,6 +679,7 @@ private struct TranslatingDots: View {
 private struct PulsingDot: View {
     let delay: Double
     @State private var isActive = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Circle()
@@ -648,6 +688,7 @@ private struct PulsingDot: View {
             .opacity(isActive ? 1.0 : 0.25)
             .offset(y: isActive ? -6 : 0)
             .onAppear {
+                guard !reduceMotion else { return }
                 withAnimation(
                     .easeInOut(duration: 0.45)
                     .repeatForever(autoreverses: true)
@@ -674,6 +715,7 @@ private struct CopyToast: View {
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+        .accessibilityElement(children: .combine)
     }
 }
 

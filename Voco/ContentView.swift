@@ -95,6 +95,7 @@ private struct TranslateRoot: View {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape").font(.system(size: 18, weight: .medium)).foregroundStyle(.primary)
                     }
+                    .accessibilityLabel("Settings")
                 }
             }
         }
@@ -114,6 +115,8 @@ private struct TranslateRoot: View {
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(Color(.tertiarySystemFill)).clipShape(Capsule())
         }.tint(.primary)
+        .accessibilityLabel(selectedModel.map { "Model: \($0.displayName)" } ?? "Select model")
+        .accessibilityHint("Opens the model library")
     }
 
     private func isModelReady(for id: String) -> Bool {
