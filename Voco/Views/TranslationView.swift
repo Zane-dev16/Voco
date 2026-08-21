@@ -27,6 +27,9 @@ struct TranslationView: View {
     @State private var isTranslating: Bool = false
     @State private var showShareSheet = false
     @State private var showCopyToast = false
+    /// Hide timer for the copy toast — cancelled and replaced on repeat taps,
+    /// and invalidated when the view disappears.
+    @State private var copyToastHideTask: Task<Void, Never>?
     @State private var errorMessage: String?
     @State private var isRecording = false
     @State private var speechService: SpeechService?
@@ -57,8 +60,12 @@ struct TranslationView: View {
 
     // MARK: - Services
 
-    private let haptic = UIImpactFeedbackGenerator(style: .soft)
-    private let ttsService = TTSService()
+    // @State keeps these instances alive across View struct re-inits. Plain
+    // `let`s were recreated on every generation — each one allocating a fresh
+    // AVSpeechSynthesizer (resetting published TTS state mid-speech) and a new
+    // haptics generator.
+    @State private var haptic = UIImpactFeedbackGenerator(style: .soft)
+    @State private var ttsService = TTSService()
 
     // MARK: - Computed
 
@@ -131,6 +138,10 @@ struct TranslationView: View {
             }
         }
         .onAppear { haptic.prepare() }
+        .onDisappear {
+            // Stop the toast hide timer so it can't fire after the view is gone.
+            copyToastHideTask?.cancel()
+        }
         .onChange(of: inputText) { _, _ in
             translationComplete = false
         }
@@ -533,10 +544,15 @@ struct TranslationView: View {
         UIPasteboard.general.string = outputText
         UIAccessibility.post(notification: .announcement,
                              argument: NSLocalizedString("Copied to clipboard", comment: "Copy confirmation"))
+        // Cancel any pending hide task so repeated taps don't stack timers
+        // (which caused flicker and premature hides).
+        copyToastHideTask?.cancel()
         withAnimation(.spring(response: 0.3)) {
             showCopyToast = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        copyToastHideTask = Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(.spring(response: 0.3)) {
                 showCopyToast = false
             }
@@ -615,49 +631,61 @@ VocoLog.speech.error("[TranslationView] Speech error: \(error)")
         let targetLang = targetLanguage.hunyuanTargetName
 
         translationTask = Task {
-            var fullOutput = ""
-            var tokenCount = 0
-
-            let stream = lifecycleManager.translateStream(
-                text,
-                from: sourceLanguage.displayName,
-                to: targetLang
-            )
+            // Accumulate chunks in an array instead of `fullOutput += chunk` —
+            // repeated string concatenation is O(n²) for large outputs.
+            var chunks: [String] = []
+            var chunkCount = 0
+            // Coalesced flush state: at most one UI update (~100 ms) / haptic
+            // (~350 ms) per window, instead of per-token re-layout of the
+            // entire Text(outputText) body.
+            var lastFlush = ContinuousClock.now
+            var lastHaptic = ContinuousClock.now
 
             do {
+                let stream = lifecycleManager.translateStream(
+                    text,
+                    from: sourceLanguage.displayName,
+                    to: targetLang
+                )
+
                 for try await chunk in stream {
                     try Task.checkCancellation()
-                    fullOutput += chunk
-                    tokenCount += 1
+                    chunks.append(chunk)
+                    chunkCount += 1
 
-                    await MainActor.run {
-                        outputText = fullOutput
+                    let now = ContinuousClock.now
+                    // First chunk renders immediately; afterwards coalesce to
+                    // ~100 ms windows (or every 8th chunk on fast models).
+                    guard chunkCount == 1
+                            || now - lastFlush >= .milliseconds(100)
+                            || chunkCount % 8 == 0 else { continue }
+                    lastFlush = now
+                    outputText = chunks.joined()
 
-                        if tokenCount % 3 == 0 {
-                            haptic.impactOccurred(intensity: 0.4)
-                        }
+                    // Time-throttled haptic (~2.9 impacts/s max) replaces the
+                    // tokenCount % 3 gate, which fired ~1.7×/s continuously.
+                    if now - lastHaptic >= .milliseconds(350) {
+                        lastHaptic = now
+                        haptic.impactOccurred(intensity: 0.4)
                     }
                 }
 
                 // Only finalize if not cancelled
                 if !Task.isCancelled {
-                    await MainActor.run {
-                        isTranslating = false
-                        translationComplete = true
-                        haptic.impactOccurred(intensity: 0.8)
-                        // VoiceOver: announce once at completion rather than per chunk.
-                        UIAccessibility.post(notification: .announcement,
-                                             argument: NSLocalizedString("Translation complete", comment: "Streaming finished"))
-                    }
+                    outputText = chunks.joined()
+                    isTranslating = false
+                    translationComplete = true
+                    haptic.impactOccurred(intensity: 0.8)
+                    // VoiceOver: announce once at completion rather than per chunk.
+                    UIAccessibility.post(notification: .announcement,
+                                         argument: NSLocalizedString("Translation complete", comment: "Streaming finished"))
                 }
             } catch is CancellationError {
                 // Swallow — new translation replaced this one
             } catch {
                 if !Task.isCancelled {
-                    await MainActor.run {
-                        errorMessage = error.localizedDescription
-                        isTranslating = false
-                    }
+                    errorMessage = error.localizedDescription
+                    isTranslating = false
                 }
             }
         }
@@ -696,6 +724,12 @@ private struct PulsingDot: View {
                 ) {
                     isActive = true
                 }
+            }
+            .onDisappear {
+                // Reset the animation state so the repeatForever animation is
+                // released when the dots leave the hierarchy instead of
+                // continuing to tick off-screen.
+                isActive = false
             }
     }
 }

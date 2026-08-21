@@ -9,6 +9,23 @@
 import Foundation
 import Observation
 import OSLog
+import UIKit
+
+/// Errors that can fail model activation before any inference work begins.
+enum ActivationError: LocalizedError {
+    /// RAM preflight failed: loading would exceed available memory and
+    /// likely trigger a jetsam kill. Surfaced through the UI alert paths.
+    case insufficientMemory(modelName: String, required: UInt64, available: UInt64)
+
+    var errorDescription: String? {
+        switch self {
+        case let .insufficientMemory(modelName, required, available):
+            let requiredStr = ByteCountFormatter.string(fromByteCount: Int64(required), countStyle: .memory)
+            let availableStr = ByteCountFormatter.string(fromByteCount: Int64(available), countStyle: .memory)
+            return "\(modelName) needs about \(requiredStr) of free memory but only \(availableStr) is available. Close other apps or choose a smaller model."
+        }
+    }
+}
 
 /// Tracks which provider is currently active and manages model lifecycle.
 @Observable
@@ -26,7 +43,38 @@ final class ModelLifecycleManager {
     }
 
     private let inferenceService = TranslationService()
-    private let downloadManager = ModelManagerService()
+    private let downloadManager: ModelManagerService
+    /// nonisolated(unsafe): the token is written once on the main actor in init
+    /// and only read from deinit; NSObjectProtocol isn't Sendable so a plain
+    /// stored property can't be touched from nonisolated deinit under Swift 6.
+    nonisolated(unsafe) private(set) var memoryWarningObserver: NSObjectProtocol?
+
+    /// - Parameter downloadManager: Shared instance to use for resolving/downloading
+    ///   model files. Injecting the app's single instance avoids a duplicate
+    ///   URLSession and divergent `downloadStates` (callers that construct with no
+    ///   arguments — previews and environment defaults — get their own instance).
+    init(downloadManager: ModelManagerService = ModelManagerService()) {
+        self.downloadManager = downloadManager
+        // All stored properties are initialized above, so capturing self in the
+        // escaping observer block below is valid.
+        // Unload the multi-GB resident model when iOS reports memory pressure;
+        // without this it stays pinned until jetsam kills the process.
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleMemoryWarning()
+            }
+        }
+    }
+
+    deinit {
+        if let token = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
 
     /// Switch to a new model — deactivate the current one first, then activate.
     /// Centralises the deactivate→activate sequence that callers otherwise duplicate.
@@ -43,18 +91,20 @@ final class ModelLifecycleManager {
 
         if activeModelID != nil { await deactivate() }
 
-        // Warn if model may exceed available RAM.
-        // A 6 GB device has ~2-3 GB usable after iOS overhead.
-        // Models > 3 GB risk jetsam on entry-level devices.
-        if model.fileSizeBytes > 3_000_000_000 {
-            let available = availableMemory()
-            // Model needs at least fileSize + 1.5 GB working-set headroom
-            let required = UInt64(model.fileSizeBytes) + 1_500_000_000
-            if available < required {
-                let requiredStr = ByteCountFormatter.string(fromByteCount: Int64(required), countStyle: .file)
-                let availableStr = ByteCountFormatter.string(fromByteCount: Int64(available), countStyle: .file)
-                VocoLog.models.warning("[ModelLifecycle] Low memory: model \(model.displayName) requires ~\(requiredStr), only \(availableStr) available. Jetsam risk.")
-            }
+        // RAM preflight: the model needs at least fileSize + 1.5 GB working-set
+        // headroom. Fail fast with a typed error instead of proceeding after a
+        // log-only warning — jetsam would otherwise kill the app mid-load.
+        let requiredMemory = UInt64(model.fileSizeBytes) + 1_500_000_000
+        let availableMem = availableMemory()
+        if availableMem < requiredMemory {
+            let requiredStr = ByteCountFormatter.string(fromByteCount: Int64(requiredMemory), countStyle: .memory)
+            let availableStr = ByteCountFormatter.string(fromByteCount: Int64(availableMem), countStyle: .memory)
+            VocoLog.models.error("[ModelLifecycle] RAM preflight failed for \(model.displayName): requires ~\(requiredStr), only \(availableStr) available.")
+            throw ActivationError.insufficientMemory(
+                modelName: model.displayName,
+                required: requiredMemory,
+                available: availableMem
+            )
         }
 
         lifecycleState = .loading(model.id)
@@ -138,6 +188,14 @@ final class ModelLifecycleManager {
 
     func handleDidEnterBackground() {
         VocoLog.models.info("[ModelLifecycle] App backgrounded — keeping model resident")
+    }
+
+    /// Frees the resident model when iOS signals memory pressure.
+    /// Wired to UIApplication.didReceiveMemoryWarningNotification in init.
+    func handleMemoryWarning() {
+        guard activeModelID != nil else { return }
+        VocoLog.models.warning("[ModelLifecycle] Memory warning — unloading '\(self.activeModelID ?? "")' to relieve pressure")
+        Task { await deactivate() }
     }
 
     func handleWillEnterForeground() async {

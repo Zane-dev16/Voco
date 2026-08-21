@@ -194,14 +194,19 @@ VocoLog.models.error("Failed to create models directory: \(error)")
     }
 }
 
-private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLSessionTaskDelegate {
+private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLSessionTaskDelegate, @unchecked Sendable {
 
     /// Handlers are registered from the main actor but mutated and consumed by the
     /// session's delegate queue — every access must hold `handlersLock`.
+    /// `@unchecked Sendable`: thread safety is guaranteed by `handlersLock`, not by
+    /// immutability.
     private var handlers: [Int: DownloadHandler] = [:]
     private let handlersLock = NSLock()
 
-    private struct DownloadHandler {
+    /// `@unchecked Sendable`: consumers already deliver values across threads
+    /// (delegate queue → main actor hop inside the closures themselves), so the
+    /// struct's closure members cross isolation boundaries by design.
+    private struct DownloadHandler: @unchecked Sendable {
         let destination: URL
         let expectedSHA256: String      // expected hash; empty = skip verification
         var copiedLocation: URL?
@@ -298,6 +303,10 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
             do {
                 let actualHash = try Self.sha256Hex(of: fileURL)
                 if actualHash != handler.expectedSHA256 {
+                    // Delete the corrupt file so a retry starts clean — otherwise
+                    // `localURL(for:)` would keep short-circuiting to the invalid
+                    // file and the model could never be re-downloaded.
+                    try? FileManager.default.removeItem(at: fileURL)
                     let err = NSError(domain: "Voco", code: -2,
                         userInfo: [NSLocalizedDescriptionKey: "Checksum mismatch — downloaded file may be corrupted. Expected \(handler.expectedSHA256.prefix(16))…, got \(actualHash.prefix(16))…"])
                     handler.onComplete(.failure(err))

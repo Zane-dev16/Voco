@@ -17,6 +17,13 @@ enum TTSPlaybackState: Equatable {
 
 /// Lightweight service wrapping AVSpeechSynthesizer.
 /// Delivers delegate callbacks via a Combine publisher.
+///
+/// MainActor-isolated: all mutable state (`state`, `progressSubject`) is
+/// protected by the main actor, which also makes the class implicitly
+/// `Sendable`. Delegate callbacks arrive on an arbitrary queue, so each
+/// witness below is explicitly `nonisolated` and hops back to the main
+/// actor via `Task { @MainActor in … }`.
+@MainActor
 final class TTSService: NSObject, ObservableObject {
 
     // MARK: - Published state
@@ -98,50 +105,53 @@ final class TTSService: NSObject, ObservableObject {
 
 // MARK: - AVSpeechSynthesizerDelegate
 
+// AVSpeechSynthesizerDelegate requirements are nonisolated (callbacks arrive
+// on an arbitrary queue), so each witness must be explicitly `nonisolated`
+// rather than inheriting the class's MainActor isolation.
 extension TTSService: AVSpeechSynthesizerDelegate {
 
-    func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didStart utterance: AVSpeechUtterance
     ) {
-        DispatchQueue.main.async { self.state = .speaking }
+        Task { @MainActor in self.state = .speaking }
     }
 
-    func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didFinish utterance: AVSpeechUtterance
     ) {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             self.state = .idle
             self.progressSubject.send(1.0)
         }
     }
 
-    func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didPause utterance: AVSpeechUtterance
     ) {
-        DispatchQueue.main.async { self.state = .paused }
+        Task { @MainActor in self.state = .paused }
     }
 
-    func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didContinue utterance: AVSpeechUtterance
     ) {
-        DispatchQueue.main.async { self.state = .speaking }
+        Task { @MainActor in self.state = .speaking }
     }
 
-    func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didCancel utterance: AVSpeechUtterance
     ) {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             self.state = .idle
             self.progressSubject.send(0)
         }
     }
 
-    func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
@@ -152,6 +162,6 @@ extension TTSService: AVSpeechSynthesizerDelegate {
         let progress = total > 0
             ? Float(characterRange.location + characterRange.length) / Float(total)
             : 0
-        DispatchQueue.main.async { self.progressSubject.send(progress) }
+        Task { @MainActor in self.progressSubject.send(progress) }
     }
 }

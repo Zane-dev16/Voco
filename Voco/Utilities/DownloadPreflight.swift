@@ -28,9 +28,10 @@ enum DownloadPreflight {
     /// Checks cellular connectivity and free storage for a model of the given size.
     /// Returns `.proceed` if both pass, or a warning result.
     static func check(modelSizeBytes: Int64) async -> PreflightResult {
-        // 1. Check network type
-        let path = await currentPath()
-        if path.isExpensive {
+        // 1. Check network type. If the path monitor doesn't report within the
+        //    timeout, assume Wi-Fi rather than hanging the preflight indefinitely.
+        let isExpensive = await currentPathIsExpensive()
+        if isExpensive {
             return .cellularWarning(bytes: modelSizeBytes)
         }
 
@@ -46,14 +47,35 @@ enum DownloadPreflight {
 
     // MARK: - Private
 
-    private static func currentPath() async -> NWPath {
+    private static func currentPathIsExpensive(timeoutSeconds: Double = 2) async -> Bool {
         await withCheckedContinuation { continuation in
+            // Guarantees exactly one resume between the monitor callback and
+            // the timeout fallback.
+            let didResume = OSAllocatedUnfairLock(initialState: false)
+            // @Sendable closure (not a local func): Swift 6 treats captured
+            // local funcs as non-Sendable values even when declared @Sendable.
+            let resumeOnce: @Sendable (Bool) -> Void = { expensive in
+                let won = didResume.withLock { flag -> Bool in
+                    if flag { return false }
+                    flag = true
+                    return true
+                }
+                guard won else { return }
+                continuation.resume(returning: expensive)
+            }
             let monitor = NWPathMonitor()
             monitor.pathUpdateHandler = { path in
-                continuation.resume(returning: path)
+                resumeOnce(path.isExpensive)
                 monitor.cancel()
             }
             monitor.start(queue: .global())
+
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeoutSeconds) {
+                // Timeout: treat as non-expensive so a flaky path update never
+                // blocks the download flow forever.
+                resumeOnce(false)
+                monitor.cancel()
+            }
         }
     }
 

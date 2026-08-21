@@ -4,20 +4,31 @@
 //
 //  Single-page root. Settings accessed via top-right gear.
 //  Managers injected via @Environment — no prop drilling.
-//  Handles memory lifecycle: unloads model when app is backgrounded.
+//  Memory policy: keep-resident — the model stays loaded in background for a
+//  quick return; it is unloaded only on an iOS memory warning (see
+//  ModelLifecycleManager's didReceiveMemoryWarning observer).
 //
 
 import SwiftUI
 import OSLog
 
 struct ContentView: View {
-    @State private var lifecycleManager = ModelLifecycleManager()
-    @State private var downloadManager = ModelManagerService()
+    @State private var lifecycleManager: ModelLifecycleManager
+    @State private var downloadManager: ModelManagerService
     @StateObject private var languageRegistry = LanguageRegistry.shared
     @State private var selectedModelID: String = "hy-mt2-1.8b-stq"
     @Environment(\.scenePhase) private var scenePhase
     @State private var activationErrorMessage: String?
     @State private var showActivationError = false
+
+    init() {
+        // One shared ModelManagerService backs both environment values, so
+        // lifecycle resolution and UI download state observe the same instance
+        // instead of two competing services with separate URLSessions.
+        let downloads = ModelManagerService()
+        _downloadManager = State(initialValue: downloads)
+        _lifecycleManager = State(initialValue: ModelLifecycleManager(downloadManager: downloads))
+    }
 
     var body: some View {
         NavigationStack {
@@ -35,8 +46,17 @@ struct ContentView: View {
             autoActivateModel(selectedModelID)
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background {
-                Task { await lifecycleManager.deactivate() }
+            switch newPhase {
+            case .background:
+                // Keep-resident: no unload here. Unloading on every backgrounding
+                // cost a multi-second model reload on each foreground return; the
+                // memory-warning observer in ModelLifecycleManager handles real
+                // pressure instead.
+                lifecycleManager.handleDidEnterBackground()
+            case .active:
+                Task { await lifecycleManager.handleWillEnterForeground() }
+            default:
+                break
             }
         }
     }

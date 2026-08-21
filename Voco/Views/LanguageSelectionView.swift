@@ -46,10 +46,10 @@ struct LanguageSelectionView: View {
 
         var groups: [(String, [SupportedLanguage])] = []
         if !voice.isEmpty {
-            groups.append(("🎤 Voice & Text", voice))
+            groups.append(("Voice & Text", voice))
         }
         if !textOnly.isEmpty {
-            groups.append(("⌨️ Text Only", textOnly))
+            groups.append(("Text Only", textOnly))
         }
         return groups
     }
@@ -58,17 +58,24 @@ struct LanguageSelectionView: View {
         NavigationStack {
             List {
                 ForEach(groupedLanguages, id: \.0) { sectionName, langs in
-                    Section(sectionName) {
+                    // LocalizedStringKey so section titles resolve from
+                    // Localizable.xcstrings ("Voice & Text" / "Text Only").
+                    Section(LocalizedStringKey(sectionName)) {
                         ForEach(langs) { lang in
-                            LanguageRow(
-                                language: lang,
-                                isSelected: lang.id == selectedLanguageID
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
+                            Button {
                                 onSelect(lang)
                                 dismiss()
+                            } label: {
+                                LanguageRow(
+                                    language: lang,
+                                    isSelected: lang.id == selectedLanguageID
+                                )
                             }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
+                            .accessibilityAddTraits(
+                                lang.id == selectedLanguageID ? [.isSelected] : []
+                            )
                         }
                     }
                 }
@@ -91,6 +98,9 @@ struct LanguageSelectionView: View {
                         Image(systemName: showVoiceOnly ? "mic.fill" : "mic")
                             .foregroundStyle(showVoiceOnly ? .blue : .secondary)
                     }
+                    .accessibilityLabel("Voice-capable languages only")
+                    .accessibilityValue(showVoiceOnly ? "On" : "Off")
+                    .accessibilityHint("Filters the list to languages that support offline voice input and output.")
                 }
             }
         }
@@ -107,6 +117,7 @@ private struct LanguageRow: View {
         HStack(spacing: 12) {
             Text(language.flag)
                 .font(.title2)
+                .accessibilityHidden(true) // decorative; name carries meaning
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(language.displayName)
@@ -123,15 +134,18 @@ private struct LanguageRow: View {
             if language.supportsVoice {
                 Text("🎤")
                     .font(.caption)
+                    .accessibilityLabel("Supports voice input")
             } else {
                 Text("⌨️")
                     .font(.caption)
+                    .accessibilityLabel("Supports typing only")
             }
 
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.blue)
                     .font(.title3)
+                    .accessibilityHidden(true) // state conveyed via .isSelected
             }
         }
         .padding(.vertical, 4)
