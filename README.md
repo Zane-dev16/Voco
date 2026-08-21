@@ -34,6 +34,11 @@ xcodebuild -scheme Voco -destination 'platform=iOS Simulator,name=iPhone' build
 Replace `iPhone` with any installed simulator — list them with
 `xcrun simctl list devices available`.
 
+> The bundled `llama.xcframework` contains arm64 slices only (device +
+> simulator). If you build with the generic destination
+> (`generic/platform=iOS Simulator`), pass `ARCHS=arm64` or the x86_64 slice
+> will fail to link.
+
 The project uses a local Swift package at `Packages/swift-llama-cpp/` wrapping
 a custom `llama.cpp` build (PR #22836, STQ1_0 kernel). No additional dependencies.
 

@@ -19,7 +19,10 @@ final class ModelManagerService {
     private let session: URLSession
 
     private let modelsDirectory: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        // Application Support always resolves in the iOS sandbox; fall back to
+        // tmp defensively rather than trap if it ever doesn't.
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         return appSupport.appendingPathComponent("Voco/Models", isDirectory: true)
     }()
 

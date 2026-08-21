@@ -1,6 +1,90 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ of %@" : {
+      "comment" : "Progress readout. Args: %@ = bytes downloaded (String), %@ = formatted model size. Source: OnboardingView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ of %@"
+          }
+        }
+      }
+    },
+    "%@ params" : {
+      "comment" : "Hero badge. Arg: %@ = parameter count label (String). Source: OnboardingView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ params"
+          }
+        }
+      }
+    },
+    "%@ to %@" : {
+      "comment" : "Accessibility value for the swap button. Args: %@ = source language name, %@ = target language name. Source: TranslationView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ to %@"
+          }
+        }
+      }
+    },
+    "%lld models" : {
+      "comment" : "Provider section count. Arg: %lld = number of models (Int). Source: ModelCatalogView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld models"
+          }
+        }
+      }
+    },
+    "%lld of %lld models" : {
+      "comment" : "Catalog header. Args: %lld = downloaded count, %lld = total models (Int). Source: ModelCatalogView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld models"
+          }
+        }
+      }
+    },
+    "%lld of %lld models downloaded" : {
+      "comment" : "Accessibility label for the catalog header. Args as above (Int). Source: ModelCatalogView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld models downloaded"
+          }
+        }
+      }
+    },
+    "%lld percent" : {
+      "comment" : "Accessibility value during download. Arg: %lld = progress percent (Int). Sources: ModelCatalogView.swift, OnboardingView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld percent"
+          }
+        }
+      }
+    },
     "About" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8,6 +92,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "About"
+          }
+        }
+      }
+    },
+    "Activates this model for translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activates this model for translation"
           }
         }
       }
@@ -67,6 +162,39 @@
         }
       }
     },
+    "Cancel download" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel download"
+          }
+        }
+      }
+    },
+    "Changes the language text is translated from" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes the language text is translated from"
+          }
+        }
+      }
+    },
+    "Changes the language text is translated to" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes the language text is translated to"
+          }
+        }
+      }
+    },
     "Clear" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -122,6 +250,18 @@
         }
       }
     },
+    "Delete %@" : {
+      "comment" : "Confirmation button and delete accessibility label. Arg: %@ = formatted model size or model display name (String). Sources: SettingsView.swift, ModelCatalogView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete %@"
+          }
+        }
+      }
+    },
     "Delete Model?" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -129,6 +269,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete Model?"
+          }
+        }
+      }
+    },
+    "Dictate text" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictate text"
           }
         }
       }
@@ -162,6 +313,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Download"
+          }
+        }
+      }
+    },
+    "Download %@'s model and translate anywhere, completely offline and private." : {
+      "comment" : "Onboarding headline. Arg: %@ = provider name (String). Source: OnboardingView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download %@'s model and translate anywhere, completely offline and private."
           }
         }
       }
@@ -243,6 +406,18 @@
         }
       }
     },
+    "Downloading %@" : {
+      "comment" : "Accessibility label during download. Arg: %@ = model display name (String). Sources: ModelCatalogView.swift, OnboardingView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading %@"
+          }
+        }
+      }
+    },
     "Enter text to translate..." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -250,6 +425,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enter text to translate..."
+          }
+        }
+      }
+    },
+    "Error: %@" : {
+      "comment" : "Error banner accessibility label. Arg: %@ = error message (String). Sources: TranslationView.swift, OnboardingView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error: %@"
+          }
+        }
+      }
+    },
+    "Filters the list to languages that support offline voice input and output." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filters the list to languages that support offline voice input and output."
           }
         }
       }
@@ -309,6 +507,17 @@
         }
       }
     },
+    "Model weights are downloaded directly from Hugging Face and are subject to the provider's license." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model weights are downloaded directly from Hugging Face and are subject to the provider's license."
+          }
+        }
+      }
+    },
     "Models & Licenses" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -316,6 +525,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Models & Licenses"
+          }
+        }
+      }
+    },
+    "Models on device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Models on device"
+          }
+        }
+      }
+    },
+    "No Models" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Models"
           }
         }
       }
@@ -342,6 +573,17 @@
         }
       }
     },
+    "No translation models are available." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No translation models are available."
+          }
+        }
+      }
+    },
     "OK" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -349,6 +591,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
+          }
+        }
+      }
+    },
+    "Off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        }
+      }
+    },
+    "On" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
+          }
+        }
+      }
+    },
+    "Opens the model library" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens the model library"
           }
         }
       }
@@ -397,6 +672,18 @@
         }
       }
     },
+    "Remove %@ from your device? You can re-download it anytime." : {
+      "comment" : "Delete confirmation message. Arg: %@ = model display name (String). Source: SettingsView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %@ from your device? You can re-download it anytime."
+          }
+        }
+      }
+    },
     "Retry" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -437,6 +724,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Source language"
+          }
+        }
+      }
+    },
+    "Status: active" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status: active"
+          }
+        }
+      }
+    },
+    "Stop recording" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop recording"
           }
         }
       }
@@ -485,6 +794,17 @@
         }
       }
     },
+    "Swaps the source and target languages" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swaps the source and target languages"
+          }
+        }
+      }
+    },
     "Target language" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -518,6 +838,66 @@
         }
       }
     },
+    "This model is %@. Downloading over cellular may use a significant amount of data." : {
+      "comment" : "Cellular alert message. Arg: %@ = formatted model size (String). Source: ModelCatalogView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This model is %@. Downloading over cellular may use a significant amount of data."
+          }
+        }
+      }
+    },
+    "This model is %@. Downloading over cellular may use a significant amount of data. We recommend using Wi-Fi." : {
+      "comment" : "Cellular alert message. Arg: %@ = formatted model size (String). Source: OnboardingView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This model is %@. Downloading over cellular may use a significant amount of data. We recommend using Wi-Fi."
+          }
+        }
+      }
+    },
+    "This model requires about %@ of free space." : {
+      "comment" : "Storage alert message. Arg: %@ = required free space, formatted bytes (String). Source: ModelCatalogView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This model requires about %@ of free space."
+          }
+        }
+      }
+    },
+    "This model requires about %@ of free space. Your device may not have enough storage available." : {
+      "comment" : "Storage alert message. Arg: %@ = required free space, formatted bytes (String). Source: OnboardingView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This model requires about %@ of free space. Your device may not have enough storage available."
+          }
+        }
+      }
+    },
+    "This will remove %@ from your device. You can re-download it anytime." : {
+      "comment" : "Delete confirmation message. Arg: %@ = model display name (String). Source: ModelCatalogView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will remove %@ from your device. You can re-download it anytime."
+          }
+        }
+      }
+    },
     "Translate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -525,6 +905,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Translate"
+          }
+        }
+      }
+    },
+    "Translating with %@..." : {
+      "comment" : "Translating state caption. Arg: %@ = active model display name (String). Source: TranslationView.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translating with %@..."
           }
         }
       }
