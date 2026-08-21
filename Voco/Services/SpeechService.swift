@@ -139,8 +139,11 @@ final class SpeechService {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            self?.recognitionRequest?.append(buffer)
+        // Append directly through the local request: the tap fires on an audio
+        // queue and must not touch MainActor-isolated state.
+        // SFSpeechAudioBufferRecognitionRequest.append(_:) is thread-safe.
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+            request.append(buffer)
         }
 
         // Prepare and start audio engine
@@ -153,20 +156,27 @@ final class SpeechService {
 
         // Start recognition
         recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
+            // The recognizer invokes this callback on a background queue — extract
+            // the values here, then hop to the main actor before touching any
+            // MainActor-isolated service state.
+            let text = result.map { $0.bestTranscription.formattedString }
+            let isFinal = result?.isFinal ?? false
 
-            if let result {
-                let text = result.bestTranscription.formattedString
-                if result.isFinal {
-                    self.onComplete?(text)
-                } else {
-                    self.onTranscription?(text)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                if let text {
+                    if isFinal {
+                        self.onComplete?(text)
+                    } else {
+                        self.onTranscription?(text)
+                    }
                 }
-            }
 
-            if let error {
-                self.onError?(error)
-                self.stopRecording()
+                if let error {
+                    self.onError?(error)
+                    self.stopRecording()
+                }
             }
         }
     }
@@ -184,7 +194,7 @@ final class SpeechService {
             try AVAudioSession.sharedInstance().setActive(false)
         } catch {
             // Log but don't throw — recording is stopping regardless.
-VocoLog.speech.error("[SpeechService] Failed to deactivate audio session: \\(error)")
+VocoLog.speech.error("[SpeechService] Failed to deactivate audio session: \(error)")
         }
     }
 
@@ -199,22 +209,26 @@ VocoLog.speech.error("[SpeechService] Failed to deactivate audio session: \\(err
             request.requiresOnDeviceRecognition = true
 
             recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
-                guard let self else {
-                    // Service deallocated mid-task — resume to prevent continuation leak.
-                    continuation.resume(throwing: SpeechRecognitionError.notAvailable)
-                    return
-                }
+                // Hop to the main actor: the recognizer calls back on a background
+                // queue while service properties are MainActor-confined.
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        // Service deallocated mid-task — resume to prevent continuation leak.
+                        continuation.resume(throwing: SpeechRecognitionError.notAvailable)
+                        return
+                    }
 
-                if let error {
+                    if let error {
+                        self.recognitionTask = nil
+                        continuation.resume(throwing: SpeechRecognitionError.recognitionTaskError(error))
+                        return
+                    }
+
+                    guard let result, result.isFinal else { return }
+
                     self.recognitionTask = nil
-                    continuation.resume(throwing: SpeechRecognitionError.recognitionTaskError(error))
-                    return
+                    continuation.resume(returning: result.bestTranscription.formattedString)
                 }
-
-                guard let result, result.isFinal else { return }
-
-                self.recognitionTask = nil
-                continuation.resume(returning: result.bestTranscription.formattedString)
             }
         }
     }

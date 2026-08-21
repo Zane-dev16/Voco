@@ -146,7 +146,9 @@ extension TTSService: AVSpeechSynthesizerDelegate {
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
     ) {
-        let total = utterance.speechString.count
+        // characterRange is UTF-16 based (NSRange) — measure the string the same
+        // way so progress stays correct for text with multi-unit characters.
+        let total = (utterance.speechString as NSString).length
         let progress = total > 0
             ? Float(characterRange.location + characterRange.length) / Float(total)
             : 0

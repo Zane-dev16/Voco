@@ -551,7 +551,7 @@ struct TranslationView: View {
                     self.isRecording = true
                 }
             } catch {
-VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
+VocoLog.speech.error("[TranslationView] Speech error: \(error)")
                 isRecording = false
             }
         }
@@ -630,8 +630,8 @@ VocoLog.speech.error("[TranslationView] Speech error: \\(error)")
 private struct TranslatingDots: View {
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(0..<5) { i in
-                PulsingDot(delay: Double(i) * 0.1)
+            ForEach(0..<5) { dotIndex in
+                PulsingDot(delay: Double(dotIndex) * 0.1)
             }
         }
     }

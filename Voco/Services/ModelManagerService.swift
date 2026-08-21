@@ -23,6 +23,13 @@ final class ModelManagerService {
         return appSupport.appendingPathComponent("Voco/Models", isDirectory: true)
     }()
 
+    /// True when the error is a user-initiated download cancellation.
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError
+            || (error as? URLError)?.code == .cancelled
+            || (error as NSError?)?.domain == NSURLErrorDomain && error._code == NSURLErrorCancelled
+    }
+
     init() {
         let config = URLSessionConfiguration.default
         session = URLSession(configuration: config, delegate: downloadDelegate, delegateQueue: nil)
@@ -57,7 +64,11 @@ final class ModelManagerService {
                             self?.downloadStates[modelID] = .failed("Downloaded file not found at destination")
                         }
                     case .failure(let error):
-                        self?.downloadStates[modelID] = .failed(error.localizedDescription)
+                        // A cancelled download was already reset to .notDownloaded
+                        // by cancelDownload(for:) — don't turn it into an error state.
+                        if !(error is CancellationError) {
+                            self?.downloadStates[modelID] = .failed(error.localizedDescription)
+                        }
                     }
                     self?.downloadTasks.removeValue(forKey: modelID)
                 }
@@ -99,7 +110,13 @@ final class ModelManagerService {
                                 self?.downloadStates[modelID] = .downloaded
                                 continuation.resume(returning: url)
                             case .failure(let err):
-                                self?.downloadStates[modelID] = .failed(err.localizedDescription)
+                                if Self.isCancellation(err) {
+                                    self?.downloadStates[modelID] = .notDownloaded
+                                } else {
+                                    self?.downloadStates[modelID] = .failed(err.localizedDescription)
+                                }
+                                // Resumed exactly once for every outcome — including
+                                // cancellation — so the awaiting task never hangs.
                                 continuation.resume(throwing: err)
                             }
                             self?.downloadTasks.removeValue(forKey: modelID)
@@ -161,7 +178,7 @@ final class ModelManagerService {
         do {
             try fm.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         } catch {
-VocoLog.models.error("Failed to create models directory: \\(error)")
+VocoLog.models.error("Failed to create models directory: \(error)")
         }
     }
 
@@ -178,35 +195,46 @@ VocoLog.models.error("Failed to create models directory: \\(error)")
 
 private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLSessionTaskDelegate {
 
+    /// Handlers are registered from the main actor but mutated and consumed by the
+    /// session's delegate queue — every access must hold `handlersLock`.
     private var handlers: [Int: DownloadHandler] = [:]
+    private let handlersLock = NSLock()
 
     private struct DownloadHandler {
         let destination: URL
         let expectedSHA256: String      // expected hash; empty = skip verification
         var copiedLocation: URL?
         var copyError: Error?
-        var isCancelled = false
         let onProgress: (Double) -> Void
         let onComplete: (Result<URL, Error>) -> Void
     }
 
     func register(for modelID: String, task: URLSessionDownloadTask, destination: URL, sha256: String, onProgress: @escaping (Double) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
-        handlers[task.taskIdentifier] = DownloadHandler(destination: destination, expectedSHA256: sha256, onProgress: onProgress, onComplete: onComplete)
+        let handler = DownloadHandler(destination: destination, expectedSHA256: sha256, onProgress: onProgress, onComplete: onComplete)
+        handlersLock.lock()
+        handlers[task.taskIdentifier] = handler
+        handlersLock.unlock()
     }
 
     func cancel(task: URLSessionDownloadTask?) {
         task?.cancel()
-        if let task, let handler = handlers[task.taskIdentifier] {
-            var updated = handler
-            updated.isCancelled = true
-            handlers[task.taskIdentifier] = updated
-        }
+        // Remove the handler and fail its completion immediately so any awaiting
+        // `downloadAsync` continuation is resumed instead of hanging forever.
+        // The later didCompleteWithError callback then finds no handler and no-ops.
+        guard let task else { return }
+        handlersLock.lock()
+        let handler = handlers.removeValue(forKey: task.taskIdentifier)
+        handlersLock.unlock()
+        handler?.onComplete(.failure(CancellationError()))
     }
 
     // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let handler = handlers[downloadTask.taskIdentifier] else { return }
+        handlersLock.lock()
+        let handler = handlers[downloadTask.taskIdentifier]
+        handlersLock.unlock()
+        guard let handler else { return }
         let fm = FileManager.default
         let destination = handler.destination
 
@@ -223,39 +251,76 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
             // Copy the temp file to final destination BEFORE returning.
             // The temp file is deleted by the system after this method returns.
             try fm.copyItem(at: location, to: destination)
+            handlersLock.lock()
             handlers[downloadTask.taskIdentifier]?.copiedLocation = destination
+            handlersLock.unlock()
         } catch {
+            handlersLock.lock()
             handlers[downloadTask.taskIdentifier]?.copyError = error
+            handlersLock.unlock()
         }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else { return }
-        handlers[downloadTask.taskIdentifier]?.onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        handlersLock.lock()
+        let onProgress = handlers[downloadTask.taskIdentifier]?.onProgress
+        handlersLock.unlock()
+        onProgress?(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let handler = handlers.removeValue(forKey: task.taskIdentifier) else { return }
-        // Cancellation is intentional — skip the error callback
-        if handler.isCancelled { return }
+        handlersLock.lock()
+        let handler = handlers.removeValue(forKey: task.taskIdentifier)
+        handlersLock.unlock()
+        guard let handler else { return }
         if let error {
             handler.onComplete(.failure(error))
         } else if let copyError = handler.copyError {
             handler.onComplete(.failure(copyError))
         } else if let copiedLocation = handler.copiedLocation {
-            // Verify SHA-256 checksum if one is expected
-            if !handler.expectedSHA256.isEmpty {
-                if let data = try? Data(contentsOf: copiedLocation) {
-                    let actualHash = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
-                    if actualHash != handler.expectedSHA256 {
-                        let err = NSError(domain: "Voco", code: -2,
-                            userInfo: [NSLocalizedDescriptionKey: "Checksum mismatch — downloaded file may be corrupted. Expected \(handler.expectedSHA256.prefix(16))…, got \(actualHash.prefix(16))…"])
-                        handler.onComplete(.failure(err))
-                        return
-                    }
-                }
-            }
-            handler.onComplete(.success(copiedLocation))
+            verifyChecksumAndComplete(handler, fileURL: copiedLocation)
         }
+    }
+
+    // MARK: - Checksum Verification
+
+    /// Verifies the downloaded file's SHA-256 (when one is expected) and delivers
+    /// the completion. Runs on a background queue: hashing multi-GB GGUFs must not
+    /// block the session's serial delegate queue.
+    private func verifyChecksumAndComplete(_ handler: DownloadHandler, fileURL: URL) {
+        DispatchQueue.global(qos: .utility).async {
+            if handler.expectedSHA256.isEmpty {
+                handler.onComplete(.success(fileURL))
+                return
+            }
+            do {
+                let actualHash = try Self.sha256Hex(of: fileURL)
+                if actualHash != handler.expectedSHA256 {
+                    let err = NSError(domain: "Voco", code: -2,
+                        userInfo: [NSLocalizedDescriptionKey: "Checksum mismatch — downloaded file may be corrupted. Expected \(handler.expectedSHA256.prefix(16))…, got \(actualHash.prefix(16))…"])
+                    handler.onComplete(.failure(err))
+                } else {
+                    handler.onComplete(.success(fileURL))
+                }
+            } catch {
+                // A failed read means the file cannot be verified — treat it as a
+                // failure rather than silently reporting success.
+                handler.onComplete(.failure(error))
+            }
+        }
+    }
+
+    /// Streams the file through an incremental SHA-256 hasher in 4 MB chunks,
+    /// avoiding a full in-memory load of potentially multi-GB model files.
+    private static func sha256Hex(of fileURL: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        let chunkSize = 4 * 1024 * 1024
+        while let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }

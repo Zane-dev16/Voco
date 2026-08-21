@@ -117,14 +117,14 @@ final class TranslationService {
             let stopStrings = model.config.prompt.stopStrings
             let marker = model.config.prompt.rawPromptMarker
             return AsyncThrowingStream { continuation in
-                Task {
+                let producer = Task {
                     do {
                         let stream = try await service.streamCompletionRaw(of: rawPrompt, samplingConfig: sampling, addBos: model.config.prompt.addBos)
                         var buffer = ""
                         var stopped = false
                         var markerFound = marker == nil  // If no marker, start yielding immediately
                         for try await token in stream {
-                            if stopped { continue }
+                            if stopped { break }
                             buffer += token
 
                             // Look for rawPromptMarker to detect end of prompt echo
@@ -171,6 +171,9 @@ final class TranslationService {
                                 }
                             }
                         }
+                        // Stop engine generation once we stop consuming (EOS, stop string,
+                        // or error) so llama.cpp does not keep generating into a dead stream.
+                        await service.stopCompletion()
                         if !buffer.isEmpty && !stopped && markerFound {
                             continuation.yield(buffer)
                         }
@@ -178,6 +181,14 @@ final class TranslationService {
                     } catch {
                         continuation.finish(throwing: error)
                     }
+                }
+                // Forward consumer cancellation to the producer task AND the inference
+                // engine — without this, cancelling a translation leaves llama.cpp
+                // generating tokens until EOS/maxTokenCount, burning CPU and battery.
+                continuation.onTermination = { termination in
+                    guard case .cancelled = termination else { return }
+                    producer.cancel()
+                    Task { await service.stopCompletion() }
                 }
             }
         }
@@ -192,7 +203,7 @@ final class TranslationService {
 
         let stopStrings = model.config.prompt.stopStrings
         return AsyncThrowingStream { continuation in
-            Task {
+            let producer = Task {
                 do {
                     let stream = try await service.streamCompletion(of: messages, samplingConfig: sampling)
                     var buffer = ""
@@ -200,7 +211,7 @@ final class TranslationService {
                     var stopped = false
                     var hasYielded = false  // Track whether we've yielded real content
                     for try await token in stream {
-                        if stopped { continue }
+                        if stopped { break }
                         buffer += token
                         // Check stop strings
                         if !stopStrings.isEmpty {
@@ -249,6 +260,9 @@ final class TranslationService {
                             }
                         }
                     }
+                    // Stop engine generation once we stop consuming (EOS, stop string,
+                    // or error) so llama.cpp does not keep generating into a dead stream.
+                    await service.stopCompletion()
                     if !buffer.isEmpty && !inThinkBlock && !stopped {
                         let out = hasYielded ? buffer : OutputProcessor.trimmingLeadingNewlines(buffer)
                         if !out.isEmpty {
@@ -259,6 +273,13 @@ final class TranslationService {
                 } catch {
                     continuation.finish(throwing: error)
                 }
+            }
+            // Forward consumer cancellation to the producer task AND the inference
+            // engine — see the raw-path comment above.
+            continuation.onTermination = { termination in
+                guard case .cancelled = termination else { return }
+                producer.cancel()
+                Task { await service.stopCompletion() }
             }
         }
     }

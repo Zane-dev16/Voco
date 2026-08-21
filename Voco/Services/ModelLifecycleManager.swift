@@ -51,14 +51,25 @@ final class ModelLifecycleManager {
             // Model needs at least fileSize + 1.5 GB working-set headroom
             let required = UInt64(model.fileSizeBytes) + 1_500_000_000
             if available < required {
-                VocoLog.models.warning("[ModelLifecycle] Low memory: model \(model.displayName) requires ~\(ByteCountFormatter.string(fromByteCount: Int64(required), countStyle: .file)), only \(ByteCountFormatter.string(fromByteCount: Int64(available), countStyle: .file)) available. Jetsam risk.")
+                let requiredStr = ByteCountFormatter.string(fromByteCount: Int64(required), countStyle: .file)
+                let availableStr = ByteCountFormatter.string(fromByteCount: Int64(available), countStyle: .file)
+                VocoLog.models.warning("[ModelLifecycle] Low memory: model \(model.displayName) requires ~\(requiredStr), only \(availableStr) available. Jetsam risk.")
             }
         }
 
         lifecycleState = .loading(model.id)
 
-        let url = try await resolveModelURL(model)
-        try await inferenceService.loadModel(model, at: url)
+        do {
+            let url = try await resolveModelURL(model)
+            try await inferenceService.loadModel(model, at: url)
+        } catch {
+            // Without this, a failed download/load leaves lifecycleState stuck in
+            // .loading forever and the .error case is never reached.
+            activeModelID = nil
+            lifecycleState = .error(error.localizedDescription)
+            VocoLog.models.error("[ModelLifecycle] Failed to activate '\(model.displayName)': \(error.localizedDescription)")
+            throw error
+        }
 
         activeModelID = model.id
         lifecycleState = .ready(model.id)
