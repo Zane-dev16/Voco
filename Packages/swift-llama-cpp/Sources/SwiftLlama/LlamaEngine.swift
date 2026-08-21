@@ -12,6 +12,10 @@ public final actor LlamaEngine {
     // MARK: Properties
     private var llama: Llama?
     private var currentTask: Task<(), Error>?
+    /// Monotonically incremented per stream request. Generation tasks capture
+    /// their id and abort when a newer request supersedes them, preventing an
+    /// orphaned older task from generating against a re-initialized KV cache.
+    private var generation = 0
     private let modelUrl: URL
     private let config: LlamaConfig
 
@@ -43,10 +47,10 @@ public final actor LlamaEngine {
             // Simple balance-based termination (ignores strings/escapes, good enough for LLM output)
             var depth: Int = 0
             var closingIndex: String.Index?
-            for (i, ch) in candidate.enumerated() {
-                let idx = candidate.index(candidate.startIndex, offsetBy: i)
-                if ch == "{" || ch == "[" { depth += 1 }
-                else if ch == "}" || ch == "]" {
+            for (offset, character) in candidate.enumerated() {
+                let idx = candidate.index(candidate.startIndex, offsetBy: offset)
+                if character == "{" || character == "[" { depth += 1 }
+                else if character == "}" || character == "]" {
                     depth -= 1
                     if depth == 0 { closingIndex = idx; break }
                 }
@@ -114,15 +118,18 @@ public final actor LlamaEngine {
     public func streamCompletion(of messages: [LlamaChatMessage], samplingConfig: LlamaSamplingConfig) async throws -> AsyncThrowingStream<String, Error> {
         guard !messages.isEmpty else { throw LlamaError.emptyMessageArray }
         let llama = try initializeLlamaIfNecessary()
+        generation += 1
+        let myGeneration = generation
         await stopCompletion()
         try await  llama.initializeCompletion(messages: messages)
         await llama.updateSamplingConfig(samplingConfig)
 
         return AsyncThrowingStream { continuation in
-            currentTask = Task {
+            let task = Task<(), Error> {
                 do {
                     generationLoop: while await (llama.currentTokenPosition < llama.maxTokenCount) {
                         guard !Task.isCancelled else { break }
+                        guard await !self.isSuperseded(myGeneration) else { break }
                         let result = try await llama.generateNextToken()
                         switch result {
                         case .token(let token):
@@ -134,6 +141,14 @@ public final actor LlamaEngine {
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
+                }
+            }
+            currentTask = task
+            // Dropping/cancelling the returned stream stops generation instead of
+            // leaving the task running against the shared KV cache.
+            continuation.onTermination = { termination in
+                if case .cancelled = termination {
+                    task.cancel()
                 }
             }
         }
@@ -158,15 +173,18 @@ public final actor LlamaEngine {
     /// Suitable for models with native prompt formats like Hunyuan MT.
     public func streamCompletionRaw(of text: String, samplingConfig: LlamaSamplingConfig, addBos: Bool? = nil) async throws -> AsyncThrowingStream<String, Error> {
         let llama = try initializeLlamaIfNecessary()
+        generation += 1
+        let myGeneration = generation
         await stopCompletion()
         try await llama.initializeCompletion(text: text, addBos: addBos)
         await llama.updateSamplingConfig(samplingConfig)
 
         return AsyncThrowingStream { continuation in
-            currentTask = Task {
+            let task = Task<(), Error> {
                 do {
                     generationLoop: while await (llama.currentTokenPosition < llama.maxTokenCount) {
                         guard !Task.isCancelled else { break }
+                        guard await !self.isSuperseded(myGeneration) else { break }
                         let result = try await llama.generateNextToken()
                         switch result {
                         case .token(let token):
@@ -180,14 +198,30 @@ public final actor LlamaEngine {
                     continuation.finish(throwing: error)
                 }
             }
+            currentTask = task
+            // Dropping/cancelling the returned stream stops generation instead of
+            // leaving the task running against the shared KV cache.
+            continuation.onTermination = { termination in
+                if case .cancelled = termination {
+                    task.cancel()
+                }
+            }
         }
     }
 
+    /// True when a newer stream request has superseded the given generation.
+    /// Superseded tasks abort before sampling so they can never interleave
+    /// tokens into a KV cache that was re-initialized by the newer request.
+    private func isSuperseded(_ generationId: Int) -> Bool {
+        generationId != generation
+    }
+
     private func initializeLlamaIfNecessary() throws -> Llama {
-        guard let llama else {
-            llama = try Llama(modelPath: modelUrl.path(percentEncoded: false), config: config)
-            return llama!
-        }
-        return llama
+        // Double-checked lazy init. This function contains no awaits, so both
+        // checks run synchronously on the actor — no window for two instances.
+        if let llama { return llama }
+        let createdLlama = try Llama(modelPath: modelUrl.path(percentEncoded: false), config: config)
+        llama = createdLlama
+        return createdLlama
     }
 }

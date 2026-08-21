@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct OnboardingView: View {
     let model: TranslationModel
@@ -18,11 +19,12 @@ struct OnboardingView: View {
     @State private var showSuccess = false
     @State private var showCellularWarning = false
     @State private var showStorageWarning = false
+    @State private var errorMessage: String?
 
     /// Progress from the live download state (0.0–1.0).
     private var downloadProgress: Double {
-        if case .downloading(let p) = downloadManager.downloadStates[model.id] {
-            return p
+        if case .downloading(let progress) = downloadManager.downloadStates[model.id] {
+            return progress
         }
         return 0
     }
@@ -101,6 +103,13 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                 }
+            }
+
+            // Error banner (mirrors TranslationView)
+            if let errorMessage {
+                errorBanner(message: errorMessage)
+                    .padding(.horizontal, 32)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             // Legal
@@ -190,9 +199,48 @@ struct OnboardingView: View {
                     showSuccess = true
                 }
                 try? await Task.sleep(nanoseconds: 800_000_000)
+            } catch is CancellationError {
+                isActivating = false
             } catch {
+                VocoLog.models.error("[Onboarding] Download/activation failed for \(model.id): \(error)")
+                withAnimation(.spring(response: 0.3)) {
+                    errorMessage = "\(model.displayName) could not be prepared. \(error.localizedDescription)"
+                }
                 isActivating = false
             }
         }
+    }
+
+    // MARK: - Error Banner
+
+    private func errorBanner(message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer()
+            Button {
+                withAnimation(.spring(response: 0.3)) {
+                    errorMessage = nil
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.orange.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Error: \(message)")
     }
 }

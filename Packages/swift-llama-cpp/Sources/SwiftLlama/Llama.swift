@@ -1,16 +1,43 @@
 import Foundation
 import llama
+import os
 
 enum NextToken {
     case token(String)
     case endOfString
 }
 
+/// Shared os.Logger for the SwiftLlama module.
+/// Replaces raw print()/NSLog so release builds stay quiet (debug-level
+/// messages are filtered out unless debug logging is explicitly enabled).
+enum SwiftLlamaLog {
+    static let logger = Logger(subsystem: "dev.voco.SwiftLlama", category: "inference")
+
+    /// Privacy-safe preview of user text: truncated to a short prefix.
+    /// Call sites mark the result `.private` so prompt contents never land in
+    /// default logs; the truncation also keeps long prompts from bloating entries.
+    static func promptPreview(_ text: String, limit: Int = 48) -> String {
+        guard text.count > limit else { return text }
+        return String(text.prefix(limit)) + "…"
+    }
+}
+
+/// Thrown when token generation is attempted before a sampling configuration
+/// has been applied via `updateSamplingConfig(_:)`.
+public struct LlamaSamplerNotConfiguredError: Error, LocalizedError {
+    public init() {}
+    public var errorDescription: String? {
+        "Token generation was requested before a sampling configuration was applied."
+    }
+}
+
 final actor Llama {
     private let model: LlamaModel
     let context: LlamaContext
     private var batch: LlamaBatch
-    private var sampler: LlamaSampler!
+    /// Optional (not implicitly unwrapped): generating before
+    /// `updateSamplingConfig(_:)` throws instead of crashing.
+    private var sampler: LlamaSampler?
 
     // Configuration
 
@@ -22,40 +49,40 @@ final actor Llama {
 
     init(modelPath: String, config: LlamaConfig) throws {
         self.config = config
-        llama_backend_init()
-        var model_params = llama_model_default_params()
+        // Ref-counted process-global backend; freed when the last Llama deinits.
+        LlamaBackend.retain()
+        var modelParameters = llama_model_default_params()
 
         if !config.useGPU {
-            model_params.n_gpu_layers = 0
+            modelParameters.n_gpu_layers = 0
         }
 
         #if targetEnvironment(simulator)
-                model_params.n_gpu_layers = 0
-                print("Running on simulator, force use n_gpu_layers = 0")
+                modelParameters.n_gpu_layers = 0
+                SwiftLlamaLog.logger.debug("Running on simulator, force use n_gpu_layers = 0")
         #endif
 
-        let model = LlamaModel(path: modelPath, parameters: model_params)
+        let model = LlamaModel(path: modelPath, parameters: modelParameters)
         guard let model else {
-            print("Could not load model at \(modelPath)")
+            SwiftLlamaLog.logger.error("Could not load model at \(modelPath, privacy: .public)")
             throw LlamaError.couldNotInitializeContext
         }
 
-        let n_threads = max(config.nThreads, 1)
-        let n_threads_batch = max(config.nThreadsBatch, 1)
-        print("[Llama] Using threadCount=\(n_threads) threadCountBatch=\(n_threads_batch)")
-        NSLog("[Llama] Using threadCount=\(n_threads) threadCountBatch=\(n_threads_batch)")
+        let threadCount = max(config.nThreads, 1)
+        let threadCountBatch = max(config.nThreadsBatch, 1)
+        SwiftLlamaLog.logger.info("[Llama] Using threadCount=\(threadCount) threadCountBatch=\(threadCountBatch)")
 
         var contextParam = llama_context_default_params()
         contextParam.n_ctx = config.maxTokenCount
-        contextParam.n_threads       = Int32(n_threads)
-        contextParam.n_threads_batch = Int32(n_threads_batch)
+        contextParam.n_threads       = Int32(threadCount)
+        contextParam.n_threads_batch = Int32(threadCountBatch)
         contextParam.n_batch = config.batchSize
         contextParam.n_ubatch = config.batchSize
         contextParam.offload_kqv = true
 
         let context = LlamaContext(model: model, parameters: contextParam)
         guard let context else {
-            print("Could not load context!")
+            SwiftLlamaLog.logger.error("Could not load context!")
             throw LlamaError.couldNotInitializeContext
         }
 
@@ -67,14 +94,16 @@ final actor Llama {
     }
 
     deinit {
-        llama_backend_free()
+        // Release our backend retain; the backend itself is only freed once the
+        // last live Llama instance releases its reference.
+        LlamaBackend.release()
     }
 
     // Expose some backend/system utilities for convenience
     /// Return system info string from the backend.
     static func printSystemInfo() -> String {
-        guard let c = llama_print_system_info() else { return "" }
-        return String(cString: c)
+        guard let systemInfoCString = llama_print_system_info() else { return "" }
+        return String(cString: systemInfoCString)
     }
 
     /// Expose the underlying context to trusted callers (tests / advanced users).
@@ -103,7 +132,9 @@ final actor Llama {
     }
 
     func initializeCompletion(text: String, addBos: Bool? = nil) throws {
-        print("attempting to complete \"\(text)\"")
+        // Log only a truncated, privacy-redacted preview — never the full prompt.
+        let preview = SwiftLlamaLog.promptPreview(text)
+        SwiftLlamaLog.logger.debug("attempting to complete \"\(preview, privacy: .private)\" (\(text.utf8.count) bytes)")
 
         let effectiveAddBos = addBos ?? model.shouldAddBos()
         let tokenList = model.tokenize(text: text, addBos: effectiveAddBos, special: true)
@@ -112,23 +143,23 @@ final actor Llama {
         }
 
         if tokenList.starts(with: processedTokens) {
-            print("### Using cached processing")
+            SwiftLlamaLog.logger.debug("Using cached processing")
             try processPrompt(tokens: Array(tokenList[processedTokens.count...]), startIndex: processedTokens.count)
         } else {
             // Check if we can optimize by only clearing from the divergence point
             let divergenceIndex = findDivergenceIndex(newTokenList: tokenList, processedTokens: processedTokens)
             
             if divergenceIndex > 0 && shouldUsePartialOptimization(divergenceIndex: divergenceIndex, totalProcessed: processedTokens.count) {
-                print("### Using partial optimization from position \(divergenceIndex)")
+                SwiftLlamaLog.logger.debug("Using partial optimization from position \(divergenceIndex)")
                 do {
                     try optimizedReprocessing(newTokenList: tokenList, divergenceIndex: divergenceIndex)
                 } catch {
-                    print("Partial optimization failed, falling back to full reprocessing")
+                    SwiftLlamaLog.logger.error("Partial optimization failed, falling back to full reprocessing")
                     clear()
                     try processPrompt(tokens: tokenList, startIndex: 0)
                 }
             } else {
-                print("### Full reprocessing required")
+                SwiftLlamaLog.logger.debug("Full reprocessing required")
                 clear()
                 try processPrompt(tokens: tokenList, startIndex: 0)
             }
@@ -138,9 +169,9 @@ final actor Llama {
     /// Find the index where the two token lists diverge
     private func findDivergenceIndex(newTokenList: [llama_token], processedTokens: [llama_token]) -> Int {
         let minLength = min(newTokenList.count, processedTokens.count)
-        for i in 0..<minLength {
-            if newTokenList[i] != processedTokens[i] {
-                return i
+        for index in 0..<minLength {
+            if newTokenList[index] != processedTokens[index] {
+                return index
             }
         }
         return minLength
@@ -178,6 +209,9 @@ final actor Llama {
         if currentTokenPosition >= Int32(maxTokenCount) {
             return .endOfString
         }
+        guard let sampler else {
+            throw LlamaSamplerNotConfiguredError()
+        }
         let newTokenId = sampler.sample(context: context)
 
         if model.isEogToken(newTokenId) || currentTokenPosition >= Int32(maxTokenCount) {
@@ -208,7 +242,7 @@ final actor Llama {
         do {
             try context.decode(batch: batch)
         } catch {
-            print("llama_decode() failed")
+            SwiftLlamaLog.logger.error("llama_decode() failed")
             throw LlamaError.decodingError
         }
     }
@@ -217,9 +251,9 @@ final actor Llama {
         guard !tokens.isEmpty else { return }
         batch.reset()
 
-        for i in 0..<tokens.count {
-            let tokenPosition = startIndex + i
-            let tokenId = tokens[i]
+        for tokenIndex in 0..<tokens.count {
+            let tokenPosition = startIndex + tokenIndex
+            let tokenId = tokens[tokenIndex]
             batch.addToken(tokenId, at: Int32(tokenPosition), logits: false)
             processedTokens.append(tokenId)
             if batch.size == config.batchSize {

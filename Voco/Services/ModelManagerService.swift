@@ -138,7 +138,7 @@ final class ModelManagerService {
         downloadDelegate.cancel(task: task)
     }
 
-    func deleteModel(_ model: TranslationModel) throws {
+    func deleteModel(_ model: TranslationModel) async throws {
         let fileURL = modelsDirectory.appendingPathComponent(model.filename)
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try FileManager.default.removeItem(at: fileURL)
@@ -147,7 +147,8 @@ final class ModelManagerService {
             // Retry once after a short delay to allow pending handles to close.
             if FileManager.default.fileExists(atPath: fileURL.path) {
                 // File still present — likely held by a lingering file descriptor.
-                Thread.sleep(forTimeInterval: 0.3)
+                // Suspend (not block) so the main actor stays responsive during the retry wait.
+                try await Task.sleep(nanoseconds: 300_000_000)
                 try FileManager.default.removeItem(at: fileURL)
             }
         }

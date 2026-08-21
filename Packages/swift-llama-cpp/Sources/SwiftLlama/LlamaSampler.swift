@@ -27,7 +27,7 @@ public final class LlamaSampler {
     ///   - config: The `LlamaSamplingConfig` that defines which samplers to use and their parameters.
     ///   - model: The `LlamaModel` is required to access the vocabulary for the grammar sampler.
     public init(config: LlamaSamplingConfig, model: LlamaModel) {
-        print(config)
+        SwiftLlamaLog.logger.debug("Initializing sampler with config: \(String(describing: config), privacy: .public)")
         let sparams = llama_sampler_chain_default_params()
         self.samplerPointer = llama_sampler_chain_init(sparams)
 
@@ -105,8 +105,8 @@ public final class LlamaSampler {
     // Chain management helpers
     /// Returns the sampler chain name if available.
     public func name() -> String {
-        guard let c = llama_sampler_name(samplerPointer) else { return "" }
-        return String(cString: c)
+        guard let nameCString = llama_sampler_name(samplerPointer) else { return "" }
+        return String(cString: nameCString)
     }
 
     /// Reset the sampler chain state.
@@ -139,9 +139,9 @@ public final class LlamaSampler {
 
     /// Get a reference name for the i-th sampler in the chain if available.
     public func name(at index: Int32) -> String {
-        guard let s = llama_sampler_chain_get(samplerPointer, index) else { return "" }
-        guard let c = llama_sampler_name(s) else { return "" }
-        return String(cString: c)
+        guard let chainedSampler = llama_sampler_chain_get(samplerPointer, index) else { return "" }
+        guard let nameCString = llama_sampler_name(chainedSampler) else { return "" }
+        return String(cString: nameCString)
     }
 
     /// Remove the i-th sampler from the chain (ownership transfers to the chain's previous owner if any).

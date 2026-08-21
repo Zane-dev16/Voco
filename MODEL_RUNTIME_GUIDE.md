@@ -436,7 +436,7 @@ get their BOS from the template itself. Raw-prompt BPE models need the forced ov
 | 9 | gemma-4-e4b-q4km | gemma4Raw | raw | **true** | OFF | none | 5.09 GB |
 | 10 | translategemma-4b-q2k | gemmaInstruct | chat/user | nil | OFF | `\n\n` | 1.65 GB |
 
-> Note: Model #10 appears as #11 in the TranslationModel catalog because Hy-MT1.5 STQ (#1 in catalog) is also included there. The table above covers the 10 models using the 5 active configs covered in this guide. Models using `compact`, `standard`, `quality`, or `nllbTranslate` configs exist in `ModelConfiguration.swift` but are not currently mapped to any `TranslationModel`.
+> Note: The table above covers the 10 models using the 5 active configs covered in this guide (`hunyuanMT`, `llamaInstruct`, `qwenInstruct`/`qwen4bInstruct`, `gemma4Raw`, `gemmaInstruct`). Unused presets were removed from `ModelConfiguration.swift`; `.quality` remains available for future high-RAM models.
 
 ---
 

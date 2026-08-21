@@ -9,7 +9,7 @@ struct ModelConfigurationTests {
         TranslationModel.availableModels.map { ($0.id, $0.config) }
     }()
 
-    @Test("All 11 models have distinct configs or valid shared configs")
+    @Test("All models have distinct configs or valid shared configs")
     func configCount() {
         let uniqueIDs = Set(allConfigs.map(\.1))
         #expect(uniqueIDs.count >= 5, "Expected at least 5 distinct configs")
@@ -43,7 +43,7 @@ struct ModelConfigurationTests {
     func presetsExist() {
         let presets: [ModelConfiguration] = [
             .hunyuanMT, .llamaInstruct, .qwenInstruct, .qwen4bInstruct,
-            .gemma4Raw, .gemmaInstruct, .nllbTranslate
+            .gemma4Raw, .gemmaInstruct
         ]
         for preset in presets {
             #expect(!preset.prompt.userPromptTemplate.isEmpty)

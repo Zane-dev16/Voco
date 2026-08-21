@@ -5,10 +5,10 @@ leaving your iPhone.**
 
 ## Supported Models
 
-Voco ships with 11 downloadable translation models from 4 providers:
+Voco ships with 10 downloadable translation models from 4 providers:
 
 | Provider | Models | Quantizations |
-|----------|--------|---------------|
+| ---------- | -------- | --------------- |
 | Tencent | Hy-MT1.5 1.8B, Hy-MT2 1.8B | STQ1_0 1.25-bit, Q4_K_M |
 | Meta | Llama 3.2 1B, Llama 3.2 3B | Q8_0, IQ3_M |
 | Qwen | Qwen3.5 0.8B, 2B, 4B | Q8_0, Q4_K_M |

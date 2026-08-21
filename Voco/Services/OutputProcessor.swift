@@ -38,10 +38,13 @@ enum OutputProcessor {
         guard !stopStrings.isEmpty else { return text }
         var earliestRange: Range<String.Index>?
         for stop in stopStrings {
-            if let range = text.range(of: stop) {
-                if earliestRange == nil || range.lowerBound < earliestRange!.lowerBound {
+            guard let range = text.range(of: stop) else { continue }
+            if let existing = earliestRange {
+                if range.lowerBound < existing.lowerBound {
                     earliestRange = range
                 }
+            } else {
+                earliestRange = range
             }
         }
         guard let range = earliestRange else { return text }

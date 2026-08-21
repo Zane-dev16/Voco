@@ -33,7 +33,7 @@ public final class LlamaModel {
     /// The `paths` must be ordered correctly.
     public init?(paths: [String], parameters: llama_model_params = llama_model_default_params()) {
         var cStrings: [UnsafeMutablePointer<CChar>?] = paths.map { strdup($0) }
-        defer { cStrings.forEach { if let p = $0 { free(UnsafeMutablePointer(mutating: p)) } } }
+        defer { cStrings.forEach { if let pathCopy = $0 { free(UnsafeMutablePointer(mutating: pathCopy)) } } }
         let count = cStrings.count
         let result = cStrings.withUnsafeMutableBufferPointer { buf in
             buf.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: count) { reboundPtr in
@@ -70,7 +70,7 @@ public final class LlamaModel {
         var buffer = [CChar](repeating: 0, count: bufferSize)
         let descriptionBufferSize = llama_model_desc(modelPointer, &buffer, bufferSize)
         guard descriptionBufferSize > 0 else {
-            fatalError("Something went wrong")
+            return "unknown"
         }
         return Self.stringFromNullTerminated(buffer)
     }
@@ -84,12 +84,33 @@ public final class LlamaModel {
     }
 
     /// Convert a token id to its piece (optionally rendering special tokens).
+    /// Grows the scratch buffer when llama.cpp reports the piece needs more room,
+    /// mirroring detokenize(tokens:removeSpecial:unparseSpecial:).
     public func piece(from token: llama_token, renderSpecial: Bool = false, lstrip: Int32 = 0) -> String {
-        let bufferSize: Int32 = 64
+        var bufferSize: Int32 = 64
         var buffer = [CChar](repeating: 0, count: Int(bufferSize))
-        let charCount = llama_token_to_piece(vocabPointer, token, &buffer, bufferSize, lstrip, renderSpecial)
-        let chars = Array(buffer.prefix(upTo: Int(charCount))) + [0]
-        return String(cString: chars, encoding: .utf8) ?? ""
+        var attempts = 0
+        repeat {
+            attempts += 1
+            let charCount = llama_token_to_piece(vocabPointer, token, &buffer, bufferSize, lstrip, renderSpecial)
+            if charCount > 0 && charCount < bufferSize {
+                // Fits with at least one byte spare for the null terminator.
+                return Self.stringFromNullTerminated(buffer)
+            }
+            if charCount < 0 {
+                // Negative return: either an error or the negated required size.
+                let needed = -Int(charCount)
+                guard needed > 0 else { return "" }
+                bufferSize = Int32(clamping: needed + 1)
+            } else {
+                // Returned exactly == capacity (or 0): cannot rule out truncation,
+                // so grow once and retry; bail out after too many attempts.
+                guard attempts < 4, charCount >= bufferSize else { return Self.stringFromNullTerminated(buffer) }
+                bufferSize *= 2
+            }
+            buffer = [CChar](repeating: 0, count: Int(bufferSize))
+        } while attempts < 4
+        return Self.stringFromNullTerminated(buffer)
     }
 
     /// Beginning-of-sentence token id.
@@ -125,11 +146,45 @@ public final class LlamaModel {
             return []
         }
         let utf8Count = text.utf8.count
-        let maxTokens = trainedContextSize()
-        let tokenBufferSize = utf8Count + (addBos ? 1 : 0) + 1
-        var tokensBuffer = [llama_token](repeating: llama_token(), count: Int(tokenBufferSize))
-        let tokenCount = llama_tokenize(vocabPointer, text, Int32(utf8Count), &tokensBuffer, maxTokens, addBos, special)
-        return Array(tokensBuffer.prefix(upTo: Int(tokenCount)))
+        // Guard against Int32 overflow for absurdly large inputs.
+        guard utf8Count <= Int(Int32.max - 2) else { return [] }
+        // Upper bound: worst case one token per UTF-8 byte (+ BOS slot).
+        // n_tokens_max is passed as the actual buffer count so the tokenizer
+        // can never write past the end of `tokensBuffer`.
+        var capacity = utf8Count + (addBos ? 1 : 0) + 1
+        var tokensBuffer = [llama_token](repeating: llama_token(), count: capacity)
+        var attempts = 0
+        repeat {
+            attempts += 1
+            let tokenCount = llama_tokenize(
+                vocabPointer,
+                text,
+                Int32(utf8Count),
+                &tokensBuffer,
+                Int32(clamping: capacity),
+                addBos,
+                special
+            )
+            if tokenCount > 0 && tokenCount < Int32(clamping: capacity) {
+                // Trustworthy count: fits with at least one slot spare.
+                return Array(tokensBuffer.prefix(Int(tokenCount)))
+            }
+            if tokenCount < 0 {
+                // Negative return: llama.cpp reports the negated required token
+                // count when the buffer is too small; other negatives are hard
+                // encode errors -> return empty rather than trapping on prefix(upTo:).
+                let needed = -Int(tokenCount)
+                guard needed > 0, needed < utf8Count * 4 + 16 else { return [] }
+                capacity = max(needed + 1, capacity * 2)
+            } else {
+                // Returned exactly == capacity (or 0): cannot rule out truncation,
+                // grow and retry once; bail out empty instead of guessing.
+                guard attempts < 3 else { return [] }
+                capacity *= 2
+            }
+            tokensBuffer = [llama_token](repeating: llama_token(), count: capacity)
+        } while attempts < 3
+        return []
     }
 
     /// Convert tokens back to text (inverse of tokenize)
@@ -163,7 +218,10 @@ public final class LlamaModel {
         var cTemplatePointer = llama_model_chat_template(modelPointer, nil)
 
         // If the GGUF lacks a template, check if this is a Gemma-architecture model
-        // and supply the built-in Gemma template string directly
+        // and supply the built-in Gemma template string directly.
+        // The strdup'd fallback must be freed after use (tracked below with defer).
+        var fallbackCopy: UnsafeMutablePointer<CChar>?
+        defer { if let copy = fallbackCopy { free(copy) } }
         if cTemplatePointer == nil {
             var archBuffer = [CChar](repeating: 0, count: 64)
             let archLen = llama_model_meta_val_str(modelPointer, "general.architecture", &archBuffer, 64)
@@ -172,12 +230,14 @@ public final class LlamaModel {
                 if arch.hasPrefix("gemma") {
                     // Pass a template string containing '<start_of_turn>' which
                     // llama_chat_apply_template detects as Gemma format
-                    cTemplatePointer = UnsafePointer(strdup("<start_of_turn>user\n"))
+                    fallbackCopy = strdup("<start_of_turn>user\n")
+                    cTemplatePointer = UnsafePointer(fallbackCopy)
                 } else if arch.hasPrefix("llama") {
                     // llama_chat_detect_template() (llama-chat.cpp:175) requires
                     // BOTH <|start_header_id|> AND <|end_header_id|> to detect
                     // Llama 3 format and apply LLM_CHAT_TEMPLATE_LLAMA_3
-                    cTemplatePointer = UnsafePointer(strdup("<|start_header_id|>user<|end_header_id|>\n"))
+                    fallbackCopy = strdup("<|start_header_id|>user<|end_header_id|>\n")
+                    cTemplatePointer = UnsafePointer(fallbackCopy)
                 }
             }
         }
@@ -342,12 +402,12 @@ public final class LlamaModel {
     public func builtinChatTemplates(maxCount: Int = 64) -> [String] {
         var result: [String] = []
         var ptrs = Array<UnsafePointer<CChar>?>(repeating: nil, count: maxCount)
-        let n = ptrs.withUnsafeMutableBufferPointer { buf in
+        let templateCount = ptrs.withUnsafeMutableBufferPointer { buf in
             llama_chat_builtin_templates(buf.baseAddress, size_t(maxCount))
         }
-        if n > 0 {
-            for i in 0..<min(Int(n), maxCount) {
-                if let p = ptrs[i] { result.append(String(cString: p)) }
+        if templateCount > 0 {
+            for index in 0..<min(Int(templateCount), maxCount) {
+                if let templatePointer = ptrs[index] { result.append(String(cString: templatePointer)) }
             }
         }
         return result
@@ -370,8 +430,8 @@ public final class LlamaModel {
     /// Build a split GGUF final path for this chunk.
     public static func splitPath(pathPrefix: String, splitNo: Int32, splitCount: Int32) -> String {
         var buf = [CChar](repeating: 0, count: 1024)
-        _ = pathPrefix.withCString { c in
-            llama_split_path(&buf, buf.count, c, splitNo, splitCount)
+        _ = pathPrefix.withCString { pathPrefixCString in
+            llama_split_path(&buf, buf.count, pathPrefixCString, splitNo, splitCount)
         }
         return Self.stringFromNullTerminated(buf)
     }
@@ -379,10 +439,10 @@ public final class LlamaModel {
     /// Extract the path prefix from a split path if and only if the split_no and split_count match.
     public static func splitPrefix(splitPath: String, splitNo: Int32, splitCount: Int32) -> String? {
         var buf = [CChar](repeating: 0, count: 1024)
-        let n = splitPath.withCString { c in
-            llama_split_prefix(&buf, buf.count, c, splitNo, splitCount)
+        let prefixLength = splitPath.withCString { splitPathCString in
+            llama_split_prefix(&buf, buf.count, splitPathCString, splitNo, splitCount)
         }
-        if n <= 0 { return nil }
+        if prefixLength <= 0 { return nil }
         return Self.stringFromNullTerminated(buf)
     }
 }

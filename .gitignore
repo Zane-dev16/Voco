@@ -25,7 +25,6 @@ Package.resolved
 
 # Model downloads (large binaries)
 *.gguf
-Models/Downloaded/
 
 # Logs
 *.log
@@ -33,5 +32,6 @@ Models/Downloaded/
 # Test harness backup
 *.swift.bak
 
-# Old framework backups
+# Old framework backups / stale framework archives
 *.xcframework.old/
+*.xcframework.zip

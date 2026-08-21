@@ -90,11 +90,6 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
 
     // MARK: - Presets
 
-    private static let defaultRuntime = RuntimeConfig(
-        batchSize: 512, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
-        temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true
-    )
-
     private static let mediumRuntime = RuntimeConfig(
         batchSize: 256, maxTokenCount: 512, threadCount: 2, threadCountBatch: 2,
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true
@@ -110,23 +105,20 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: false
     )
 
-    private static let nllbRuntime = RuntimeConfig(
-        batchSize: 256, maxTokenCount: 256, threadCount: 2, threadCountBatch: 2,
-        temperature: 0.0, topP: 0.95, topK: 20, seed: 1234, useGPU: true
-    )
-
     /// Tencent Hy-MT1.5 — raw SentencePiece prompt format.
     /// Official format: single BOS token, no system prompt placeholder.
     static let hunyuanMT = ModelConfiguration(prompt: PromptConfig(
         strategy: .raw,
         systemPrompt: "",
-        userPromptTemplate: "<｜hy_begin▁of▁sentence｜>\n<｜hy_User｜>Translate the following segment into {target}, without additional explanation.\n\n{text}\n<｜hy_Assistant｜>"
+        userPromptTemplate: "<｜hy_begin▁of▁sentence｜>\n<｜hy_User｜>"
+            + "Translate the following segment into {target}, without additional explanation.\n\n{text}\n<｜hy_Assistant｜>"
     ), runtime: cpuOnlyMedium)
 
     /// Llama 3.2 Instruct.
     static let llamaInstruct = ModelConfiguration(prompt: PromptConfig(
         strategy: .chatWithSystem,
-        systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary, notes, or explanations.",
+        systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. "
+            + "Output ONLY the translation, with no extra commentary, notes, or explanations.",
         userPromptTemplate: "{text}",
         stopStrings: ["<|eot_id|>"]
     ), runtime: mediumRuntime)
@@ -166,30 +158,11 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         stopStrings: ["\n\n"]
     ), runtime: translateGemmaRuntime)
 
-    /// NLLB-200 — dedicated translation model.
-    static let nllbTranslate = ModelConfiguration(prompt: PromptConfig(
-        strategy: .raw,
-        systemPrompt: "",
-        userPromptTemplate: "__{source_code}__ __{target_code}__ {text}"
-    ), runtime: nllbRuntime)
-
     // MARK: - Standalone runtime presets
 
-    /// Small models ~300-500 MB.
-    static let compact = ModelConfiguration(prompt: PromptConfig(
-        strategy: .chatWithSystem,
-        systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",
-        userPromptTemplate: "{text}"
-    ), runtime: defaultRuntime)
-
-    /// Medium-large models ~600 MB-1.5 GB.
-    static let standard = ModelConfiguration(prompt: PromptConfig(
-        strategy: .chatWithSystem,
-        systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",
-        userPromptTemplate: "{text}"
-    ), runtime: mediumRuntime)
-
     /// High-quality config for devices with ≥4GB free RAM.
+    /// Note: not referenced by any registry entry today; kept as an example of
+    /// a large-batch runtime override for future high-RAM models.
     static let quality = ModelConfiguration(prompt: PromptConfig(
         strategy: .chatWithSystem,
         systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",

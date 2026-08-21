@@ -16,6 +16,8 @@ struct SettingsView: View {
     @State private var showDeleteConfirmation = false
     @State private var modelToDelete: TranslationModel?
     @State private var showModelSheet = false
+    @State private var activationErrorMessage: String?
+    @State private var showActivationError = false
 
     private var downloadedModels: [TranslationModel] {
         TranslationModel.availableModels.filter { downloadManager.isModelDownloaded($0) }
@@ -58,6 +60,11 @@ struct SettingsView: View {
             Button("Keep", role: .cancel) {}
         } message: { model in
             Text("Remove \(model.displayName) from your device? You can re-download it anytime.")
+        }
+        .alert("Couldn't Activate Model", isPresented: $showActivationError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(activationErrorMessage ?? "An unknown error occurred while activating the model.")
         }
     }
 
@@ -304,7 +311,18 @@ struct SettingsView: View {
         selectedModelID = model.id
         guard downloadManager.isModelDownloaded(model) else { return }
         loadTask = Task {
-            try? await lifecycleManager.switchTo(model)
+            do {
+                try await lifecycleManager.switchTo(model)
+            } catch is CancellationError {
+                return
+            } catch {
+                VocoLog.models.error("[Settings] Activation failed for \(model.id): \(error)")
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    activationErrorMessage = "\(model.displayName) could not be activated. \(error.localizedDescription)"
+                    showActivationError = true
+                }
+            }
         }
     }
 
@@ -318,7 +336,7 @@ struct SettingsView: View {
             await lifecycleManager.deactivate()
         }
         do {
-            try downloadManager.deleteModel(model)
+            try await downloadManager.deleteModel(model)
         } catch {
 VocoLog.models.error("[Settings] Delete error: \(error)")
         }

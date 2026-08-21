@@ -6,7 +6,7 @@ models. Adding a model requires editing **only one file**: `Voco/Models/Translat
 ## Current Models (10 entries, 4 providers)
 
 | # | ID | Provider | Model | Quantization | Size | Capability |
-|---|-----|----------|-------|-------------|------|------------|
+| --- | ----- | ---------- | ------- | ------------- | ------ | ------------ |
 | 1 | `hy-mt2-1.8b-stq` | Tencent | Hy-MT2 1.8B | 1.25-bit STQ1_0 | 441 MB | Simulator + Device |
 | 2 | `hy-mt1.5-1.8b-q4km` | Tencent | Hy-MT1.5 1.8B HQ | Q4_K_M | 1.06 GB | Simulator + Device |
 | 3 | `llama-3.2-1b-q8` | Meta | Llama 3.2 1B | Q8_0 | 1.32 GB | Device Recommended |
@@ -25,13 +25,13 @@ models. Adding a model requires editing **only one file**: `Voco/Models/Translat
 3. Append a new `TranslationModel(...)` entry to the `availableModels` array
    in `TranslationModel.swift`.
 4. Choose a `config` preset: `.hunyuanMT`, `.llamaInstruct`, `.qwenInstruct`,
-   `.gemma4Raw`, `.gemmaInstruct`, `.compact`, `.standard`, `.quality`, or `.nllbTranslate`.
+   `.qwen4bInstruct`, `.gemma4Raw`, `.gemmaInstruct`, or `.quality`.
 5. Verify the URL with a HEAD request before committing.
 
 ## Architecture
 
 | File | Responsibility |
-|------|----------------|
+| ------ | ---------------- |
 | `TranslationModel.swift` | Registry array + `TranslationModel` struct |
 | `ModelConfiguration.swift` | Reusable config presets (batch, tokens, prompts) |
 | `LlamaService.swift` | Reads `model.config` at runtime — zero hardcoded values |

@@ -20,6 +20,8 @@ struct ModelCatalogView: View {
     @State private var modelToDelete: TranslationModel?
     @State private var showActivateSuccess = false
     @State private var lastActivatedModel: String?
+    @State private var showActivateError = false
+    @State private var activationErrorMessage: String?
 
     /// Models grouped by provider.
     private var providerGroups: [(provider: String, models: [TranslationModel])] {
@@ -27,11 +29,11 @@ struct ModelCatalogView: View {
         let providerOrder = ["Tencent", "Google"]
         return grouped
             .map { (provider: $0.key, models: $0.value.sorted { $0.fileSizeBytes < $1.fileSizeBytes }) }
-            .sorted { a, b in
-                let aIdx = providerOrder.firstIndex(of: a.provider) ?? providerOrder.count
-                let bIdx = providerOrder.firstIndex(of: b.provider) ?? providerOrder.count
+            .sorted { lhs, rhs in
+                let aIdx = providerOrder.firstIndex(of: lhs.provider) ?? providerOrder.count
+                let bIdx = providerOrder.firstIndex(of: rhs.provider) ?? providerOrder.count
                 if aIdx != bIdx { return aIdx < bIdx }
-                return a.provider < b.provider
+                return lhs.provider < rhs.provider
             }
     }
 
@@ -88,6 +90,15 @@ struct ModelCatalogView: View {
                             withAnimation { showActivateSuccess = false }
                         }
                     }
+            } else if showActivateError {
+                ToastView(message: activationErrorMessage ?? "Activation failed",
+                          systemImage: "exclamationmark.triangle.fill", tint: .orange)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            withAnimation { showActivateError = false }
+                        }
+                    }
             }
         }
     }
@@ -136,7 +147,21 @@ struct ModelCatalogView: View {
         }
 
         loadTask = Task {
-            try? await lifecycleManager.switchTo(model)
+            do {
+                try await lifecycleManager.switchTo(model)
+            } catch is CancellationError {
+                return
+            } catch {
+                VocoLog.models.error("[ModelCatalog] Activation failed for \(model.id): \(error)")
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    activationErrorMessage = "Couldn't activate \(model.displayName)"
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        showActivateError = true
+                    }
+                }
+                return
+            }
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 lastActivatedModel = model.displayName
@@ -152,7 +177,7 @@ struct ModelCatalogView: View {
             await lifecycleManager.deactivate()
         }
         do {
-            try downloadManager.deleteModel(model)
+            try await downloadManager.deleteModel(model)
         } catch {
 VocoLog.models.error("[ModelCatalog] Delete error: \(error)")
         }
@@ -458,11 +483,12 @@ private struct StatusDot: View {
 private struct ToastView: View {
     let message: String
     let systemImage: String
+    var tint: Color = .green
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .foregroundStyle(.green)
+                .foregroundStyle(tint)
             Text(message)
                 .font(.subheadline.weight(.medium))
         }

@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct ContentView: View {
     @State private var lifecycleManager = ModelLifecycleManager()
@@ -15,6 +16,8 @@ struct ContentView: View {
     @StateObject private var languageRegistry = LanguageRegistry.shared
     @State private var selectedModelID: String = "hy-mt2-1.8b-stq"
     @Environment(\.scenePhase) private var scenePhase
+    @State private var activationErrorMessage: String?
+    @State private var showActivationError = false
 
     var body: some View {
         NavigationStack {
@@ -23,6 +26,11 @@ struct ContentView: View {
         .environment(\.lifecycleManager, lifecycleManager)
         .environment(\.downloadManager, downloadManager)
         .environmentObject(languageRegistry)
+        .alert("Couldn't Activate Model", isPresented: $showActivationError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(activationErrorMessage ?? "An unknown error occurred while activating the model.")
+        }
         .onAppear {
             autoActivateModel(selectedModelID)
         }
@@ -37,7 +45,17 @@ struct ContentView: View {
         guard let model = TranslationModel.availableModels.first(where: { $0.id == modelID }) else { return }
         guard downloadManager.isModelDownloaded(model) else { return }
         guard lifecycleManager.activeModelID != modelID else { return }
-        Task { try? await lifecycleManager.activate(model) }
+        Task {
+            do {
+                try await lifecycleManager.activate(model)
+            } catch is CancellationError {
+                return
+            } catch {
+                VocoLog.models.error("[ContentView] Auto-activation failed for \(model.id): \(error)")
+                activationErrorMessage = "\(model.displayName) could not be activated. \(error.localizedDescription)"
+                showActivationError = true
+            }
+        }
     }
 }
 
