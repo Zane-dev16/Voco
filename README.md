@@ -1,4 +1,4 @@
-# Voco — Offline Privacy-First AI Translation
+# Voco Offline Privacy-First AI Translation
 
 **An iOS app that runs translation models entirely on-device, with no data
 leaving your iPhone.**
