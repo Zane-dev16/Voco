@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Voco
 
+@MainActor
 @Suite("OutputProcessor")
 struct OutputProcessorTests {
 

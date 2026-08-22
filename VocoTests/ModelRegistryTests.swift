@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Voco
 
+@MainActor
 @Suite("Model Registry")
 struct ModelRegistryTests {
 
