@@ -9,13 +9,16 @@ their respective licenses.
 llama.cpp
 ---------
 MIT License
-Copyright (c) 2023-2024 The llama.cpp team
+Copyright (c) 2023-2026 The ggml authors
 https://github.com/ggml-org/llama.cpp
+Modified build: PR #22836 stq-kernel branch (STQ1_0 quantization)
 
 swift-llama-cpp
 ---------------
 MIT License
+Copyright (c) 2025 Piotr Gorzelany
 https://github.com/pgorzelany/swift-llama-cpp
+Local fork, modified to support custom llama.cpp build and STQ1_0
 
 ---
 

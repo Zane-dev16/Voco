@@ -1,12 +1,13 @@
 # MODEL_RUNTIME_GUIDE
 
-> **Purpose:** Comprehensive reference for how each of Voco's 11 translation models runs on the custom llama.cpp backend.
+> **Purpose:** Comprehensive reference for how each of Voco's 10 translation models runs on the custom llama.cpp backend.
 >
 > **Date:** 2026-06-05
 
 **Source files (6):**
+
 - `Voco/Voco/Models/ModelConfiguration.swift` — 9 presets
-- `Voco/Voco/Models/TranslationModel.swift` — 11-model catalog
+- `Voco/Voco/Models/TranslationModel.swift` — 10-model catalog
 - `Voco/Voco/Services/LlamaService.swift` — Voco's translation service
 - `Packages/swift-llama-cpp/Sources/SwiftLlama/LlamaService.swift` — SwiftLlama layer
 - `Packages/swift-llama-cpp/Sources/SwiftLlama/Llama.swift` — Core engine
@@ -47,12 +48,13 @@ llama.cpp C API -> token generation loop
 ### Three Prompt Strategies
 
 | Strategy | Bypasses Chat Template? | Calls | Used By |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `raw` | Yes | `streamCompletionRaw()` | Hunyuan, Gemma 4 |
 | `chatWithSystem` | No (system + user) | `streamCompletion()` | Llama 3.2, Qwen3.5 |
 | `chatUserOnly` | No (user only) | `streamCompletion()` | TranslateGemma |
 
 **Strategy routing** (LlamaService.swift:74-103):
+
 ```swift
 switch model.config.promptStrategy {
 case .raw:
@@ -104,6 +106,7 @@ public func shouldAddBos() -> Bool {
 ```
 
 **Critical insight:** `shouldAddBos()` checks TWO conditions:
+
 1. `llama_vocab_get_add_bos()` — does the GGUF metadata say add_bos=true?
 2. `llama_vocab_type() == LLAMA_VOCAB_TYPE_SPM` — is the tokenizer SentencePiece?
 
@@ -114,7 +117,7 @@ no BOS token -> model echoes prompt -> no translation.
 **Fix:** `addBos: true` in config forces BOS, overriding `shouldAddBos()`.
 
 | addBos value | Behavior |
-|---|---|
+| --- | --- |
 | `nil` (default) | Defer to `shouldAddBos()` — most models |
 | `true` | Force BOS regardless — Gemma 4 rescue |
 | `false` | Force NO BOS regardless — not currently used |
@@ -153,11 +156,12 @@ if cTemplatePointer == nil {
 ### Config: `hunyuanMT` (2 models)
 
 **Models:**
+
 - `hy-mt2-1.8b-stq` — Hy-MT2 1.8B, 441 MB, STQ1_0 (1.25-bit) — next-gen 33-language
 - `hy-mt1.5-1.8b-q4km` — Hy-MT1.5 1.8B, 1.08 GB, Q4_K_M — previous gen HQ
 
 | Property | Value |
-|---|---|
+| --- | --- |
 | Strategy | `raw` |
 | Tokenizer | SPM (SentencePiece) |
 | addBos | `nil` (shouldAddBos() -> true for SPM) |
@@ -183,6 +187,7 @@ if cTemplatePointer == nil {
 > Note: The actual special tokens use Unicode \u2581 (▁) instead of `|`; simplified above for readability. See `ModelConfiguration.swift:53` for exact template.
 
 **Gotchas:**
+
 - CPU-only due to STQ1_0 NEON kernel bug — generic C kernel at ~4.5 tok/s vs broken NEON at ~50 tok/s
 - Special SentencePiece prompt format with Hunyuan-specific tokens
 - Both models share the same config preset
@@ -192,22 +197,24 @@ if cTemplatePointer == nil {
 ### Config: `llamaInstruct` (2 models)
 
 **Models:**
+
 - `llama-3.2-1b-q8` — Llama 3.2 1B, 1.32 GB, Q8_0
 - `llama-3.2-3b-iq3m` — Llama 3.2 3B, 1.53 GB, IQ3_M
 
 | Property | Value |
-|---|---|
+| --- | --- |
 | Strategy | `chatWithSystem` |
 | Tokenizer | SPM (SentencePiece) |
 | addBos | `nil` (default) |
 | GPU | Enabled |
 | Temperature | 0.0 (greedy) |
-| Stop strings | `["<|eot_id|>"]` |
+| Stop strings | `["< | eot_id | >"]` |
 | rawPromptMarker | nil |
 | batchSize | 256 |
 | maxTokenCount | 512 |
 
 **System prompt:**
+
 ```
 You are a professional translator. Translate the user's text accurately
 and naturally into {target}. Output ONLY the translation, with no extra
@@ -217,6 +224,7 @@ commentary, notes, or explanations.
 **User prompt:** `{text}`
 
 **Gotchas:**
+
 - Stop string `</think>` strips any thinking/reasoning blocks from output
 - Attribution required: "Built with Meta Llama 3.2"
 - `requiresBuiltWithLlamaAttribution: true` in TranslationModel
@@ -226,18 +234,19 @@ commentary, notes, or explanations.
 ### Config: `qwenInstruct` (3 models)
 
 **Models:**
+
 - `qwen3.5-0.8b-q8` — Qwen3.5 0.8B, 795 MB, Q8_0
 - `qwen3.5-2b-q4km` — Qwen3.5 2B, 1.25 GB, Q4_K_M — sweet spot
 - `qwen3.5-4b-q4km` — Qwen3.5 4B, 2.60 GB, Q4_K_M — exceeds 1.5 GB soft limit
 
 | Property | Value |
-|---|---|
+| --- | --- |
 | Strategy | `chatWithSystem` |
 | Tokenizer | BPE (but chat template handles BOS via addBos: nil) |
 | addBos | `nil` (default — chat template adds BOS, not tokenizer) |
 | GPU | Enabled |
 | Temperature | 0.0 (greedy) |
-| Stop strings | `["<|im_end|>"]` |
+| Stop strings | `["< | im_end | >"]` |
 | rawPromptMarker | nil |
 | batchSize | 256 |
 | maxTokenCount | 256 |
@@ -247,6 +256,7 @@ commentary, notes, or explanations.
 **User prompt:** `Translate to {target}: {text}`
 
 **Effective ChatML prompt (after template application):**
+
 ```
 <|im_start|>system
 You are a translator. Output the translation and nothing else.<|im_end|>
@@ -256,6 +266,7 @@ Translate to Spanish: Hello, how are you?<|im_end|>
 ```
 
 **Gotchas:**
+
 - ChatML format — `<|im_end|>` is critical for clean output
 - Qwen3.5 4B at 2.60 GB risks memory pressure on devices with <4 GB free
 - BPE tokenizer but addBos: nil works because chat template adds BOS token in the formatted prompt
@@ -265,11 +276,12 @@ Translate to Spanish: Hello, how are you?<|im_end|>
 ### Config: `gemma4Raw` (2 models)
 
 **Models:**
+
 - `gemma-4-e2b-q4km` — Gemma 4 E2B, 3.27 GB, Q4_K_M
 - `gemma-4-e4b-q4km` — Gemma 4 E4B, 5.09 GB, Q4_K_M
 
 | Property | Value |
-|---|---|
+| --- | --- |
 | Strategy | `raw` (bypasses chat template) |
 | Tokenizer | **BPE** — shouldAddBos() returns FALSE |
 | **addBos** | **`true` (FORCED — CRITICAL)** |
@@ -281,18 +293,21 @@ Translate to Spanish: Hello, how are you?<|im_end|>
 | maxTokenCount | 512 |
 
 **Prompt template:**
+
 ```
 Translate to {target}: {text}
 {target}:
 ```
 
 **Example prompt:**
+
 ```
 Translate to Spanish: Hello, how are you?
 Spanish:
 ```
 
 **Gotchas:**
+
 - **MUST have `addBos: true`** — BPE tokenizer silently drops BOS otherwise,
   causing model to echo prompt instead of translating
 - **Do NOT add stop strings** like `"\n<"` or `"\n\n"` — these fire on
@@ -306,10 +321,11 @@ Spanish:
 ### Config: `gemmaInstruct` (1 model)
 
 **Models:**
+
 - `translategemma-4b-q2k` — TranslateGemma 4B, 1.65 GB, Q2_K
 
 | Property | Value |
-|---|---|
+| --- | --- |
 | Strategy | `chatUserOnly` (user role only, no system) |
 | Tokenizer | SPM (SentencePiece) |
 | addBos | `nil` (default) |
@@ -323,6 +339,7 @@ Spanish:
 **User prompt:** `Translate to {target}: {text}`
 
 **Gotchas:**
+
 - No system role — system messages confuse Gemma-family models
 - Tight token limit (32) — this is a dedicated translation model,
   not a general-purpose LLM, so outputs are short by design
@@ -336,6 +353,7 @@ Spanish:
 ### Stop String Processing
 
 **Non-streaming path** (LlamaService.swift:322-334):
+
 ```swift
 private func truncateAtStopStrings(_ text: String, config: ModelConfiguration) -> String {
     guard !config.stopStrings.isEmpty else { return text }
@@ -353,6 +371,7 @@ private func truncateAtStopStrings(_ text: String, config: ModelConfiguration) -
 ```
 
 **Streaming path** (LlamaService.swift:162-176):
+
 - Checks buffer against stop strings after each token
 - When found: yields content before the stop string, sets `stopped = true`
 - Stops yielding immediately — no further tokens processed
@@ -369,6 +388,7 @@ the marker from the raw completion output. Designed to handle models that echo
 their prompt in raw mode.
 
 **Non-streaming** (LlamaService.swift:94-98):
+
 ```swift
 if let marker = model.config.rawPromptMarker, let range = output.range(of: marker) {
     rawOutput = String(output[range.upperBound...])
@@ -378,6 +398,7 @@ if let marker = model.config.rawPromptMarker, let range = output.range(of: marke
 ```
 
 **Streaming** (LlamaService.swift:146-159):
+
 - Accumulates tokens until marker found in buffer
 - Trims buffer to last 200 chars if >500 chars to avoid unbounded growth
 - Only yields tokens after marker is found
@@ -409,7 +430,7 @@ static func stripThinkingTags(from text: String) -> String {
 ### Tokenizer Comparison
 
 | Model Family | Tokenizer Type | BOS Behavior | Config |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Tencent Hunyuan | SPM | Auto-added | hunyuanMT |
 | Meta Llama 3.2 | SPM | Auto-added | llamaInstruct |
 | Qwen3.5 | BPE | Added by chat template | qwenInstruct |
@@ -424,14 +445,14 @@ get their BOS from the template itself. Raw-prompt BPE models need the forced ov
 ## Quick Reference Table
 
 | # | Model ID | Config | Strategy | addBos | GPU | Stop Strings | Size |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | hy-mt2-1.8b-stq | hunyuanMT | raw | nil | OFF | none | 441 MB |
 | 2 | hy-mt1.5-1.8b-q4km | hunyuanMT | raw | nil | OFF | none | 1.08 GB |
-| 3 | llama-3.2-1b-q8 | llamaInstruct | chat+sys | nil | ON | `<|eot_id|>` | 1.32 GB |
-| 4 | llama-3.2-3b-iq3m | llamaInstruct | chat+sys | nil | ON | `<|eot_id|>` | 1.53 GB |
-| 5 | qwen3.5-0.8b-q8 | qwenInstruct | chat+sys | nil | ON | `<|im_end|>` | 795 MB |
-| 6 | qwen3.5-2b-q4km | qwenInstruct | chat+sys | nil | ON | `<|im_end|>` | 1.25 GB |
-| 7 | qwen3.5-4b-q4km | qwenInstruct | chat+sys | nil | ON | `<|im_end|>` | 2.60 GB |
+| 3 | llama-3.2-1b-q8 | llamaInstruct | chat+sys | nil | ON | `< | eot_id | >` | 1.32 GB |
+| 4 | llama-3.2-3b-iq3m | llamaInstruct | chat+sys | nil | ON | `< | eot_id | >` | 1.53 GB |
+| 5 | qwen3.5-0.8b-q8 | qwenInstruct | chat+sys | nil | ON | `< | im_end | >` | 795 MB |
+| 6 | qwen3.5-2b-q4km | qwenInstruct | chat+sys | nil | ON | `< | im_end | >` | 1.25 GB |
+| 7 | qwen3.5-4b-q4km | qwenInstruct | chat+sys | nil | ON | `< | im_end | >` | 2.60 GB |
 | 8 | gemma-4-e2b-q4km | gemma4Raw | raw | **true** | OFF | none | 3.27 GB |
 | 9 | gemma-4-e4b-q4km | gemma4Raw | raw | **true** | OFF | none | 5.09 GB |
 | 10 | translategemma-4b-q2k | gemmaInstruct | chat/user | nil | OFF | `\n\n` | 1.65 GB |
@@ -442,7 +463,7 @@ get their BOS from the template itself. Raw-prompt BPE models need the forced ov
 
 ## Key Code Paths Reference
 
-### To fix a model that echoes/doesn't translate:
+### To fix a model that echoes/doesn't translate
 
 1. Check `ModelConfiguration.addBos` — if BPE tokenizer, must be `true` or the chat template must handle it
 2. Check `ModelConfiguration.stopStrings` — any that appear in the prompt will fire prematurely
@@ -450,10 +471,10 @@ get their BOS from the template itself. Raw-prompt BPE models need the forced ov
 4. For raw models: check `rawPromptMarker` if prompt echo is still an issue after addBos fix
 5. For chat models: check `applyChatTemplate()` fallback path for missing GGUF templates
 
-### Source locations for key functions:
+### Source locations for key functions
 
 | Function | File | Lines |
-|---|---|---|
+| --- | --- | --- |
 | `shouldAddBos()` | LlamaModel.swift | 101-107 |
 | `initializeCompletion(text:addBos:)` | Llama.swift | 105-109 |
 | `streamCompletionRaw(addBos:)` | LlamaService.swift (SwiftLlama) | 159-184 |

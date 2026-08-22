@@ -35,3 +35,9 @@ Package.resolved
 # Old framework backups / stale framework archives
 *.xcframework.old/
 *.xcframework.zip
+
+# Secrets / credentials — never commit
+*.p8
+*.keystore
+*.jks
+credentials.json
