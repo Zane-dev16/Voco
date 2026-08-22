@@ -228,6 +228,17 @@
         }
       }
     },
+    "Copy translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy translation"
+          }
+        }
+      }
+    },
     "Couldn't Activate Model" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -717,6 +728,17 @@
         }
       }
     },
+    "Share translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share translation"
+          }
+        }
+      }
+    },
     "Source language" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -724,6 +746,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Source language"
+          }
+        }
+      }
+    },
+    "Speak translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speak translation"
           }
         }
       }

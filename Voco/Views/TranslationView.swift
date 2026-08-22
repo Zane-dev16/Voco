@@ -475,7 +475,7 @@ struct TranslationView: View {
         }
     }
 
-    private func actionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 20))
@@ -483,7 +483,7 @@ struct TranslationView: View {
                 .frame(maxWidth: .infinity, minHeight: 48)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(label)
+        .accessibilityLabel(Text(label))
     }
 
     // MARK: - Error Banner
