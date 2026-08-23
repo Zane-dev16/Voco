@@ -33,6 +33,13 @@ final class ModelManagerService {
             || (error as NSError?)?.domain == NSURLErrorDomain && error._code == NSURLErrorCancelled
     }
 
+    // Cached disk facts (S7-21): view bodies previously re-scanned the models
+    // directory on every render — including at progress-tick frequency during
+    // downloads. Refreshed at launch, terminal download outcomes, deletion,
+    // and foreground-active.
+    private(set) var cachedDiskUsageBytes: Int64 = 0
+    private(set) var cachedDownloadedIDs: Set<String> = []
+
     init() {
         let config = URLSessionConfiguration.default
         // Long-tail transfers over flaky networks: wait for connectivity
@@ -44,6 +51,18 @@ final class ModelManagerService {
         ensureModelsDirectoryExists()
         scanExistingModels()
         cleanupPartialInstalls()
+        refreshCaches()
+    }
+
+    /// Recomputes cached disk usage and downloaded flags. Cheap (a handful of
+    /// stat calls) but not free — call on terminal events, not per frame.
+    func refreshCaches() {
+        cachedDiskUsageBytes = computeTotalDiskUsage()
+        cachedDownloadedIDs = Set(
+            TranslationModel.availableModels
+                .filter { adoptedFileURL(for: $0) != nil }
+                .map(\.id)
+        )
     }
 
     func download(_ model: TranslationModel) {
@@ -71,6 +90,7 @@ final class ModelManagerService {
                         self?.downloadStates[modelID] = .failed(error.localizedDescription)
                     }
                 }
+                self?.refreshCaches()
                 self?.downloadTasks.removeValue(forKey: modelID)
             }
         }
@@ -153,6 +173,7 @@ final class ModelManagerService {
                                     // cancellation — so the awaiting task never hangs.
                                     continuation.resume(throwing: err)
                                 }
+                            self?.refreshCaches()
                                 self?.downloadTasks.removeValue(forKey: modelID)
                             }
                         }
@@ -194,6 +215,7 @@ final class ModelManagerService {
         }
         downloadStates[model.id] = .notDownloaded
         downloadDelegate.clearResumeData(for: model.id)
+        refreshCaches()
     }
 
     /// Adopts an on-disk GGUF only when its size matches the registry entry.
@@ -215,7 +237,7 @@ final class ModelManagerService {
     }
 
     func isModelDownloaded(_ model: TranslationModel) -> Bool {
-        adoptedFileURL(for: model) != nil
+        cachedDownloadedIDs.contains(model.id)
     }
 
     func localURL(for model: TranslationModel) -> URL? {
@@ -223,6 +245,10 @@ final class ModelManagerService {
     }
 
     func totalDiskUsage() -> Int64 {
+        cachedDiskUsageBytes
+    }
+
+    private func computeTotalDiskUsage() -> Int64 {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: modelsDirectory, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
         return files.reduce(0) { total, url in

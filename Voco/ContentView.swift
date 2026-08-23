@@ -55,6 +55,8 @@ struct ContentView: View {
                 lifecycleManager.handleDidEnterBackground()
             case .active:
                 Task { await lifecycleManager.handleWillEnterForeground() }
+                // Re-sync cached disk facts after possible external changes.
+                downloadManager.refreshCaches()
             default:
                 break
             }

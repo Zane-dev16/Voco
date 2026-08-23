@@ -15,7 +15,9 @@ import SwiftUI
 // MARK: - SupportedLanguage
 
 /// A language supported by Voco for translation, with runtime voice capability flags.
-struct SupportedLanguage: Identifiable, Hashable, Comparable {
+/// Explicitly `nonisolated`: a pure value type consulted from background
+/// capability probes as well as the main actor.
+nonisolated struct SupportedLanguage: Identifiable, Hashable, Comparable {
     let id: String           // ISO 639-1 code (e.g., "es") or BCP 47 (e.g., "zh-Hans")
     let displayName: String  // User-facing name (e.g., "Spanish")
     let promptName: String   // Name injected into LLM prompts (e.g., "Spanish")
@@ -90,7 +92,21 @@ final class LanguageRegistry: ObservableObject {
 
     private init() {
         languages = Self.buildLanguageList()
-        resolveCapabilities()
+        probeCapabilitiesInBackground()
+    }
+
+    /// Probes speech capabilities off the main thread (S7-20): ~70 recognizer
+    /// constructions plus voice scans cost hundreds of milliseconds at first
+    /// frame otherwise. The static language list is available synchronously;
+    /// capability flags fill in shortly after launch (UI already renders
+    /// transient text-only states).
+    private func probeCapabilitiesInBackground() {
+        let langs = languages
+        Task.detached(priority: .userInitiated) {
+            let sttIDs = Self.detectSTTCapabilities(for: langs)
+            let ttsIDs = Self.detectTTSCapabilities(for: langs)
+            await self.applyCapabilities(sttIDs: sttIDs, ttsIDs: ttsIDs)
+        }
     }
 
     // MARK: - Language List
@@ -195,39 +211,35 @@ final class LanguageRegistry: ObservableObject {
 
     // MARK: - Capability Detection
 
-    /// Resolves STT and TTS availability for all languages.
-    /// Call once on app launch.
-    func resolveCapabilities() {
-        resolveSTTCapabilities()
-        resolveTTSCapabilities()
+    /// Publishes probed capability sets on the main actor.
+    private func applyCapabilities(sttIDs: Set<String>, ttsIDs: Set<String>) {
+        sttSupportedIDs = sttIDs
+        ttsSupportedIDs = ttsIDs
+        for i in languages.indices {
+            languages[i].supportsOfflineSTT = sttIDs.contains(languages[i].id)
+            languages[i].supportsOfflineTTS = ttsIDs.contains(languages[i].id)
+        }
         updateFilteredLists()
     }
 
     /// Checks which languages have on-device speech recognition.
-    private func resolveSTTCapabilities() {
+    /// nonisolated: runs on a utility executor away from the main actor.
+    nonisolated private static func detectSTTCapabilities(for languages: [SupportedLanguage]) -> Set<String> {
         var supported = Set<String>()
-
         for lang in languages {
-            let locale = Locale(identifier: lang.id)
+            let locale = Locale(identifier: lang.speechLocaleID)
             if let recognizer = SFSpeechRecognizer(locale: locale),
                recognizer.supportsOnDeviceRecognition {
                 supported.insert(lang.id)
             }
         }
-
-        sttSupportedIDs = supported
-
-        // Update language structs
-        for i in languages.indices {
-            languages[i].supportsOfflineSTT = supported.contains(languages[i].id)
-        }
+        return supported
     }
 
     /// Checks which languages have installed TTS voices.
-    private func resolveTTSCapabilities() {
+    nonisolated private static func detectTTSCapabilities(for languages: [SupportedLanguage]) -> Set<String> {
         let voices = AVSpeechSynthesisVoice.speechVoices()
         var supported = Set<String>()
-
         for lang in languages {
             // Variant-tagged languages (zh-CN vs zh-TW vs zh-HK, fil-PH) match
             // exactly so Chinese variants don't conflate; plain ISO codes keep
@@ -243,13 +255,7 @@ final class LanguageRegistry: ObservableObject {
                 supported.insert(lang.id)
             }
         }
-
-        ttsSupportedIDs = supported
-
-        // Update language structs
-        for i in languages.indices {
-            languages[i].supportsOfflineTTS = supported.contains(languages[i].id)
-        }
+        return supported
     }
 
     /// Splits languages into voice and text-only lists.
