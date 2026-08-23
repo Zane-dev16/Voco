@@ -78,12 +78,6 @@ final class LanguageRegistry: ObservableObject {
     /// All supported languages, sorted by display name.
     @Published private(set) var languages: [SupportedLanguage] = []
 
-    /// Languages that support both STT and TTS (voice mode).
-    @Published private(set) var voiceLanguages: [SupportedLanguage] = []
-
-    /// Languages that are text-only (missing STT or TTS).
-    @Published private(set) var textOnlyLanguages: [SupportedLanguage] = []
-
     /// Set of language IDs that support offline STT.
     private(set) var sttSupportedIDs: Set<String> = []
 
@@ -219,7 +213,6 @@ final class LanguageRegistry: ObservableObject {
             languages[i].supportsOfflineSTT = sttIDs.contains(languages[i].id)
             languages[i].supportsOfflineTTS = ttsIDs.contains(languages[i].id)
         }
-        updateFilteredLists()
     }
 
     /// Checks which languages have on-device speech recognition.
@@ -258,11 +251,6 @@ final class LanguageRegistry: ObservableObject {
         return supported
     }
 
-    /// Splits languages into voice and text-only lists.
-    private func updateFilteredLists() {
-        voiceLanguages = languages.filter { $0.supportsVoice }
-        textOnlyLanguages = languages.filter { !$0.supportsVoice }
-    }
 
     // MARK: - Lookups
 
@@ -277,11 +265,6 @@ final class LanguageRegistry: ObservableObject {
             $0.displayName.lowercased() == name.lowercased() ||
             $0.promptName.lowercased() == name.lowercased()
         })
-    }
-
-    /// Find a language by its legacy Language enum value.
-    func language(forLegacy legacy: Language) -> SupportedLanguage? {
-        language(forID: legacy.rawValue)
     }
 
     /// Get the appropriate language name for a given model config.

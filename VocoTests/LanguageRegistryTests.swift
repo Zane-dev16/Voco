@@ -76,15 +76,6 @@ struct LanguageRegistryTests {
         #expect(registry.language(byName: "No Such Language") == nil)
     }
 
-    @Test("language(forLegacy:) maps every legacy Language enum value")
-    func lookupByLegacy() {
-        for legacy in Language.allCases {
-            let resolved = registry.language(forLegacy: legacy)
-            #expect(resolved != nil, "Legacy \(legacy.rawValue) should resolve")
-            #expect(resolved?.id == legacy.rawValue)
-        }
-    }
-
     @Test("languages(for:) respects model supportedLanguageCodes")
     func modelFiltering() {
         let unrestricted = TranslationModel.availableModels.first {
@@ -108,23 +99,6 @@ struct LanguageRegistryTests {
     }
 
     // MARK: - Capability Partitioning
-
-    @Test("Voice and text-only lists partition the registry")
-    func capabilityPartition() {
-        let all = Set(registry.languages.map(\.id))
-        let voice = Set(registry.voiceLanguages.map(\.id))
-        let textOnly = Set(registry.textOnlyLanguages.map(\.id))
-
-        #expect(voice.isDisjoint(with: textOnly))
-        #expect(voice.union(textOnly) == all)
-
-        for lang in registry.voiceLanguages {
-            #expect(lang.supportsVoice)
-        }
-        for lang in registry.textOnlyLanguages {
-            #expect(!lang.supportsVoice)
-        }
-    }
 
     @Test("Capability ID sets stay within the registry")
     func capabilityIDScopes() {

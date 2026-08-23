@@ -157,18 +157,4 @@ struct ModelConfiguration: Sendable, Hashable, Equatable {
         userPromptTemplate: "Translate to {target}. Output only the translation, no explanations.\n{text}",
         stopStrings: ["\n\n"]
     ), runtime: translateGemmaRuntime)
-
-    // MARK: - Standalone runtime presets
-
-    /// High-quality config for devices with ≥4GB free RAM.
-    /// Note: not referenced by any registry entry today; kept as an example of
-    /// a large-batch runtime override for future high-RAM models.
-    static let quality = ModelConfiguration(prompt: PromptConfig(
-        strategy: .chatWithSystem,
-        systemPrompt: "You are a professional translator. Translate the user's text accurately and naturally into {target}. Output ONLY the translation, with no extra commentary.",
-        userPromptTemplate: "{text}"
-    ), runtime: RuntimeConfig(
-        batchSize: 2048, maxTokenCount: 2048, threadCount: 3, threadCountBatch: 3,
-        temperature: 0.0, topP: 0.9, topK: 40, seed: 1234, useGPU: true
-    ))
 }

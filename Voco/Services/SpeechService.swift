@@ -206,39 +206,4 @@ final class SpeechService {
 VocoLog.speech.error("[SpeechService] Failed to deactivate audio session: \(error)")
         }
     }
-
-    // MARK: - One-Shot Transcription
-
-    /// Transcribes a single audio file URL.
-    /// - Parameter url: URL of the audio file to transcribe.
-    /// - Returns: The transcribed text, or `nil` if no result.
-    func transcribe(audioFileAt url: URL) async throws -> String? {
-        try await withCheckedThrowingContinuation { continuation in
-            let request = SFSpeechURLRecognitionRequest(url: url)
-            request.requiresOnDeviceRecognition = true
-
-            recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
-                // Hop to the main actor: the recognizer calls back on a background
-                // queue while service properties are MainActor-confined.
-                Task { @MainActor [weak self] in
-                    guard let self else {
-                        // Service deallocated mid-task — resume to prevent continuation leak.
-                        continuation.resume(throwing: SpeechRecognitionError.notAvailable)
-                        return
-                    }
-
-                    if let error {
-                        self.recognitionTask = nil
-                        continuation.resume(throwing: SpeechRecognitionError.recognitionTaskError(error))
-                        return
-                    }
-
-                    guard let result, result.isFinal else { return }
-
-                    self.recognitionTask = nil
-                    continuation.resume(returning: result.bestTranscription.formattedString)
-                }
-            }
-        }
-    }
 }
