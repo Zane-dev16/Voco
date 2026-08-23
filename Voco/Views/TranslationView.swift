@@ -333,6 +333,14 @@ struct TranslationView: View {
     }
 
     private func swapLanguages() {
+        // S7-06: cancel any in-flight stream first — otherwise old-direction
+        // chunks keep appending while the header shows the swapped pair,
+        // presenting the finished translation under the wrong language.
+        if isTranslating {
+            translationTask?.cancel()
+            translationTask = nil
+            isTranslating = false
+        }
         let temp = sourceLanguage
         sourceLanguage = targetLanguage
         targetLanguage = temp
@@ -395,11 +403,17 @@ struct TranslationView: View {
                     Task { @MainActor in
                         if let text { self.inputText = text }
                         self.isRecording = false
+                        // Release mic + service (S7-05): belt-and-braces with
+                        // SpeechService's own isFinal cleanup.
+                        self.speechService?.stopRecording()
+                        self.speechService = nil
                     }
                 }
                 service.onError = { _ in
                     Task { @MainActor in
                         self.isRecording = false
+                        self.speechService?.stopRecording()
+                        self.speechService = nil
                     }
                 }
                 try service.startRecording()

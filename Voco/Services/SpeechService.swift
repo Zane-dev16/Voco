@@ -139,6 +139,10 @@ final class SpeechService {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
+        // Defensive: remove any stale tap from an aborted previous session
+        // before installing (no-op when none exists).
+        inputNode.removeTap(onBus: 0)
+
         // Append directly through the local request: the tap fires on an audio
         // queue and must not touch MainActor-isolated state.
         // SFSpeechAudioBufferRecognitionRequest.append(_:) is thread-safe.
@@ -168,6 +172,11 @@ final class SpeechService {
                 if let text {
                     if isFinal {
                         self.onComplete?(text)
+                        // Final result delivered — release the microphone NOW.
+                        // Without this the tap stays installed, the engine keeps
+                        // running, and the .record session stays active process-wide
+                        // (mic indicator lit, other apps' audio ducked).
+                        self.stopRecording()
                     } else {
                         self.onTranscription?(text)
                     }
