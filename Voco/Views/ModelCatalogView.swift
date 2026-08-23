@@ -335,7 +335,7 @@ private struct ModelCard: View {
             isPressed = pressing
         }, perform: {})
         .alert("Download over cellular?", isPresented: $showCellularWarning) {
-            Button("Download Anyway") { onDownload() }
+            Button("Download Anyway") { confirmDownloadIgnoringNetwork() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This model is \(model.formattedSize). Downloading over cellular may use a significant amount of data.")
@@ -345,6 +345,22 @@ private struct ModelCard: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This model requires about \(ByteCountFormatter.string(fromByteCount: model.fileSizeBytes * 2, countStyle: .file)) of free space.")
+        }
+    }
+
+    /// User already accepted the network condition — revalidate only the fatal
+    /// storage constraint at actual transfer start (space may have moved while
+    /// the warning was up).
+    private func confirmDownloadIgnoringNetwork() {
+        Task {
+            let result = DownloadPreflight.checkStorage(modelSizeBytes: model.fileSizeBytes)
+            await MainActor.run {
+                if result == .proceed {
+                    onDownload()
+                } else {
+                    showStorageWarning = true
+                }
+            }
         }
     }
 

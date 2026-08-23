@@ -25,23 +25,36 @@ enum PreflightResult: Equatable, Sendable {
 /// Stateless pre-download checks for network and storage.
 enum DownloadPreflight {
 
-    /// Checks cellular connectivity and free storage for a model of the given size.
-    /// Returns `.proceed` if both pass, or a warning result.
+    /// Checks storage and network for a model of the given size.
+    /// Storage is evaluated FIRST and regardless of network type — a nearly-full
+    /// disk must fail here with an actionable message, not at copy time with a
+    /// generic error (previously cellular users skipped the check entirely).
     static func check(modelSizeBytes: Int64) async -> PreflightResult {
-        // 1. Check network type. If the path monitor doesn't report within the
-        //    timeout, assume Wi-Fi rather than hanging the preflight indefinitely.
-        let isExpensive = await currentPathIsExpensive()
-        if isExpensive {
-            return .cellularWarning(bytes: modelSizeBytes)
-        }
-
-        // 2. Check storage: need ~2× model size for download + temp + overhead
+        // 1. Storage: need ~2× model size for download + temp + overhead.
         let required = modelSizeBytes * 2
         let available = freeStorage()
         if available < required {
             return .insufficientStorage(needed: required, available: available)
         }
 
+        // 2. Network type. If the path monitor doesn't report within the
+        //    timeout, assume Wi-Fi rather than hanging the preflight indefinitely.
+        if await currentPathIsExpensive() {
+            return .cellularWarning(bytes: modelSizeBytes)
+        }
+
+        return .proceed
+    }
+
+    /// Storage-only check for flows where the user already accepted the network
+    /// condition (e.g. confirmed a cellular download) — revalidated at transfer
+    /// start, since free space may have changed while the warning was up.
+    static func checkStorage(modelSizeBytes: Int64) -> PreflightResult {
+        let required = modelSizeBytes * 2
+        let available = freeStorage()
+        if available < required {
+            return .insufficientStorage(needed: required, available: available)
+        }
         return .proceed
     }
 

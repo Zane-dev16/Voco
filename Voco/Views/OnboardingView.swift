@@ -194,11 +194,23 @@ struct OnboardingView: View {
 
         Task {
             do {
+                // Re-check storage at actual transfer start — the earlier check
+                // predates the user's confirmation and free space may have moved.
+                let storageResult = DownloadPreflight.checkStorage(modelSizeBytes: model.fileSizeBytes)
+                guard storageResult == .proceed else {
+                    await MainActor.run { showStorageWarning = true }
+                    isActivating = false
+                    return
+                }
                 if !downloadManager.isModelDownloaded(model) {
                     _ = try await downloadManager.downloadAsync(model)
                 }
 
                 try await lifecycleManager.activate(model)
+                // Reset alongside success: if this model gets displaced before
+                // the view unmounts, a stuck isActivating would leave the
+                // primary button permanently disabled.
+                isActivating = false
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
                     showSuccess = true
                 }
