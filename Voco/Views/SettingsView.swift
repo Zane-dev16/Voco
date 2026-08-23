@@ -279,6 +279,17 @@ struct SettingsView: View {
                     Text("Models & Licenses")
                 }
             }
+
+            NavigationLink {
+                OpenSourceNoticesView()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.plaintext")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                    Text("Open-Source Notices")
+                }
+            }
         } header: {
             Text("About")
         } footer: {

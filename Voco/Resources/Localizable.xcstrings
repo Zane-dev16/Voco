@@ -628,6 +628,17 @@
         }
       }
     },
+    "Open-Source Notices" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open-Source Notices"
+          }
+        }
+      }
+    },
     "Opens the model library" : {
       "extractionState" : "manual",
       "localizations" : {
