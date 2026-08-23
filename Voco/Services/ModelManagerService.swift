@@ -40,6 +40,19 @@ final class ModelManagerService {
     private(set) var cachedDiskUsageBytes: Int64 = 0
     private(set) var cachedDownloadedIDs: Set<String> = []
 
+    /// Identities for downloadAsync waiters so a cancelling task can remove
+    /// exactly its own entry.
+    private final class DownloadWaiter {
+        let continuation: CheckedContinuation<URL, Error>
+        init(continuation: CheckedContinuation<URL, Error>) {
+            self.continuation = continuation
+        }
+    }
+
+    /// downloadAsync callers awaiting an in-flight download. They fan in on the
+    /// shared outcome instead of failing with a misleading error (S7-22).
+    private var asyncWaiters: [String: [DownloadWaiter]] = [:]
+
     init() {
         let config = URLSessionConfiguration.default
         // Long-tail transfers over flaky networks: wait for connectivity
@@ -139,56 +152,81 @@ final class ModelManagerService {
     /// (via cancelDownload), so an abandoned multi-GB activation stops downloading
     /// instead of finishing in the background and loading the wrong model.
     func downloadAsync(_ model: TranslationModel) async throws -> URL {
-        guard let targetURL = localURL(for: model) else {
-            let modelID = model.id
-            return try await withTaskCancellationHandler(operation: {
-                try await withCheckedThrowingContinuation { continuation in
-                    guard downloadTasks[model.id] == nil else {
-                        // Second waiter on an in-flight download — fail with the
-                        // closest truthful message rather than blocking forever.
-                        continuation.resume(throwing: LlamaError.noModelLoaded)
-                        return
-                    }
-                    _ = beginDownload(
-                        model,
-                        targetURL: modelsDirectory.appendingPathComponent(model.filename),
-                        onProgress: { [weak self] progress in
-                            Task { @MainActor in
-                                self?.downloadStates[modelID] = .downloading(progress: progress)
-                            }
-                        },
-                        onComplete: { [weak self] result in
-                            Task { @MainActor in
-                                switch result {
-                                case .success(let url):
-                                    self?.downloadStates[modelID] = .downloaded
-                                    continuation.resume(returning: url)
-                                case .failure(let err):
-                                    if Self.isCancellation(err) {
-                                        self?.downloadStates[modelID] = .notDownloaded
-                                    } else {
-                                        self?.downloadStates[modelID] = .failed(err.localizedDescription)
-                                    }
-                                    // Resumed exactly once for every outcome — including
-                                    // cancellation — so the awaiting task never hangs.
-                                    continuation.resume(throwing: err)
-                                }
-                            self?.refreshCaches()
-                                self?.downloadTasks.removeValue(forKey: modelID)
-                            }
+        if let targetURL = localURL(for: model) { return targetURL }
+
+        let modelID = model.id
+
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                // Cancel-before-entry race: the handler already fired.
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+
+                let waiter = DownloadWaiter(continuation: continuation)
+                asyncWaiters[modelID, default: []].append(waiter)
+
+                // Already downloading? Fan in on its shared outcome (S7-22).
+                guard downloadTasks[modelID] == nil else { return }
+
+                _ = beginDownload(
+                    model,
+                    targetURL: modelsDirectory.appendingPathComponent(model.filename),
+                    onProgress: { [weak self] progress in
+                        Task { @MainActor in
+                            self?.downloadStates[modelID] = .downloading(progress: progress)
                         }
-                    )
-                }
-            }, onCancel: { [weak self] in
-                // Runs synchronously, possibly off the main actor. cancelDownload
-                // is main-actor isolated, so hop back; the continuation is resumed
-                // by the delegate's failure callback exactly once.
-                Task { @MainActor [weak self] in
-                    self?.cancelDownload(for: modelID)
-                }
-            })
+                    },
+                    onComplete: { [weak self] result in
+                        Task { @MainActor in
+                            switch result {
+                            case .success:
+                                self?.downloadStates[modelID] = .downloaded
+                            case .failure(let err):
+                                self?.downloadStates[modelID] = Self.isCancellation(err)
+                                    ? .notDownloaded
+                                    : .failed(err.localizedDescription)
+                            }
+                            self?.flushWaiters(for: modelID, with: result)
+                            self?.refreshCaches()
+                            self?.downloadTasks.removeValue(forKey: modelID)
+                        }
+                    }
+                )
+            }
+        }, onCancel: { [weak self] in
+            // Runs synchronously, possibly off the main actor — hop to it.
+            Task { @MainActor [weak self] in
+                self?.cancelWaiter(modelID: modelID)
+            }
+        })
+    }
+
+    /// Resumes every downloadAsync waiter with the shared outcome, exactly once.
+    private func flushWaiters(for modelID: String, with result: Result<URL, Error>) {
+        guard let waiters = asyncWaiters.removeValue(forKey: modelID) else { return }
+        for waiter in waiters {
+            switch result {
+            case .success(let url):
+                waiter.continuation.resume(returning: url)
+            case .failure(let err):
+                waiter.continuation.resume(throwing: err)
+            }
         }
-        return targetURL
+    }
+
+    /// Removes and fails one waiter whose awaiting task was cancelled, without
+    /// disturbing siblings or the shared transfer.
+    private func cancelWaiter(modelID: String) {
+        guard var list = asyncWaiters[modelID], !list.isEmpty else { return }
+        let cancelled = list.removeFirst()
+        if list.isEmpty {
+            asyncWaiters.removeValue(forKey: modelID)
+        } else {
+            asyncWaiters[modelID] = list
+        }
+        cancelled.continuation.resume(throwing: CancellationError())
     }
 
     func cancelDownload(for modelID: String) {
