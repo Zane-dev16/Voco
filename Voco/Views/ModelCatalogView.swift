@@ -134,11 +134,8 @@ struct ModelCatalogView: View {
 
     // MARK: - Actions
 
-    @State private var loadTask: Task<Void, Never>?
-
     private func selectModel(_ model: TranslationModel) {
         guard model.id != selectedModelID else { return }
-        loadTask?.cancel()
         selectedModelID = model.id
 
         guard downloadManager.isModelDownloaded(model) else {
@@ -146,33 +143,21 @@ struct ModelCatalogView: View {
             return
         }
 
-        loadTask = Task {
-            do {
-                try await lifecycleManager.switchTo(model)
-            } catch is CancellationError {
-                return
-            } catch {
-                VocoLog.models.error("[ModelCatalog] Activation failed for \(model.id): \(error)")
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    activationErrorMessage = "Couldn't activate \(model.displayName)"
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                        showActivateError = true
-                    }
-                    UIAccessibility.post(notification: .announcement, argument: activationErrorMessage)
-                }
-                return
+        lifecycleManager.performActivation(model) {
+            lastActivatedModel = model.displayName
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                showActivateSuccess = true
             }
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                lastActivatedModel = model.displayName
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                    showActivateSuccess = true
-                }
-                // VoiceOver users can't see transient toasts — announce them.
-                UIAccessibility.post(notification: .announcement,
-                                     argument: "\(model.displayName) is ready")
+            // VoiceOver users can't see transient toasts — announce them.
+            UIAccessibility.post(notification: .announcement,
+                                 argument: "\(model.displayName) is ready")
+        } onFailure: { message in
+            VocoLog.models.error("[ModelCatalog] Activation failed for \(model.id): \(message)")
+            activationErrorMessage = "Couldn't activate \(model.displayName)"
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                showActivateError = true
             }
+            UIAccessibility.post(notification: .announcement, argument: activationErrorMessage)
         }
     }
 
@@ -318,7 +303,7 @@ private struct ModelCard: View {
             HStack(spacing: 0) {
                 actionBarContent
             }
-            .frame(height: 40)
+            .frame(minHeight: 40)
             .background(Color(.tertiarySystemGroupedBackground))
         }
         .background(Color(.secondarySystemGroupedBackground))
@@ -334,34 +319,12 @@ private struct ModelCard: View {
         .onLongPressGesture(minimumDuration: 0.01, pressing: { pressing in
             isPressed = pressing
         }, perform: {})
-        .alert("Download over cellular?", isPresented: $showCellularWarning) {
-            Button("Download Anyway") { confirmDownloadIgnoringNetwork() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This model is \(model.formattedSize). Downloading over cellular may use a significant amount of data.")
-        }
-        .alert("Insufficient Storage", isPresented: $showStorageWarning) {
-            Button("Try Anyway") { onDownload() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This model requires about \(ByteCountFormatter.string(fromByteCount: model.fileSizeBytes * 2, countStyle: .file)) of free space.")
-        }
-    }
-
-    /// User already accepted the network condition — revalidate only the fatal
-    /// storage constraint at actual transfer start (space may have moved while
-    /// the warning was up).
-    private func confirmDownloadIgnoringNetwork() {
-        Task {
-            let result = DownloadPreflight.checkStorage(modelSizeBytes: model.fileSizeBytes)
-            await MainActor.run {
-                if result == .proceed {
-                    onDownload()
-                } else {
-                    showStorageWarning = true
-                }
-            }
-        }
+        .downloadPreflightAlerts(
+            model: model,
+            showCellularWarning: $showCellularWarning,
+            showStorageWarning: $showStorageWarning,
+            onConfirmedDownload: onDownload
+        )
     }
 
     private func startDownload() {

@@ -325,26 +325,16 @@ struct SettingsView: View {
 
     // MARK: - Actions
 
-    @State private var loadTask: Task<Void, Never>?
-
     private func selectModel(_ model: TranslationModel) {
         guard model.id != selectedModelID else { return }
-        loadTask?.cancel()
         selectedModelID = model.id
         guard downloadManager.isModelDownloaded(model) else { return }
-        loadTask = Task {
-            do {
-                try await lifecycleManager.switchTo(model)
-            } catch is CancellationError {
-                return
-            } catch {
-                VocoLog.models.error("[Settings] Activation failed for \(model.id): \(error)")
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    activationErrorMessage = "\(model.displayName) could not be activated. \(error.localizedDescription)"
-                    showActivationError = true
-                }
-            }
+        lifecycleManager.performActivation(model) {
+            // Success is visible through the active-model UI.
+        } onFailure: { message in
+            VocoLog.models.error("[Settings] Activation failed for \(model.id): \(message)")
+            activationErrorMessage = "\(model.displayName) could not be activated. \(message)"
+            showActivationError = true
         }
     }
 

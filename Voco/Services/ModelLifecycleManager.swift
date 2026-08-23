@@ -222,6 +222,36 @@ final class ModelLifecycleManager {
         lifecycleState = .idle
     }
 
+    /// Manager-owned activation task — the single writer for model switching
+    /// (S7-24/S7-01). Cancels any prior attempt, runs the generation-guarded
+    /// switchTo, and reports outcomes on the main actor. Views no longer keep
+    /// their own loadTask copies (which couldn't actually cancel anything).
+    @discardableResult
+    func performActivation(
+        _ model: TranslationModel,
+        onSuccess: @escaping () -> Void = {},
+        onFailure: @escaping (String) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+        activationTask?.cancel()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.switchTo(model)
+                guard !Task.isCancelled else { return }
+                onSuccess()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                onFailure(error.localizedDescription)
+            }
+        }
+        activationTask = task
+        return task
+    }
+
+    private var activationTask: Task<Void, Never>?
+
     /// Whether a model is currently loaded and ready.
     var isModelReady: Bool {
         if case .ready = lifecycleState { return true }

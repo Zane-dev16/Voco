@@ -106,10 +106,12 @@ struct OnboardingView: View {
                 }
             }
 
-            // Error banner (mirrors TranslationView)
+            // Error banner — shared component (mirrors TranslationView)
             if let errorMessage {
-                errorBanner(message: errorMessage)
-                    .padding(.horizontal, 32)
+                ErrorBanner(message: errorMessage) {
+                    self.errorMessage = nil
+                }
+                .padding(.horizontal, 32)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .onAppear {
                         UIAccessibility.post(notification: .announcement, argument: errorMessage)
@@ -130,18 +132,13 @@ struct OnboardingView: View {
             Spacer()
         }
         .background(Color(.systemGroupedBackground))
-        .alert("Download over cellular?", isPresented: $showCellularWarning) {
-            Button("Download Anyway") { performDownload() }
-            Button("Cancel", role: .cancel) { isActivating = false }
-        } message: {
-            Text("This model is \(model.formattedSize). Downloading over cellular may use a significant amount of data. We recommend using Wi-Fi.")
-        }
-        .alert("Insufficient Storage", isPresented: $showStorageWarning) {
-            Button("Try Anyway") { performDownload() }
-            Button("Cancel", role: .cancel) { isActivating = false }
-        } message: {
-            Text("This model requires about \(ByteCountFormatter.string(fromByteCount: model.fileSizeBytes * 2, countStyle: .file)) of free space. Your device may not have enough storage available.")
-        }
+        .downloadPreflightAlerts(
+            model: model,
+            showCellularWarning: $showCellularWarning,
+            showStorageWarning: $showStorageWarning,
+            onConfirmedDownload: { startConfirmedDownload() },
+            onCancelWarning: { isActivating = false }
+        )
     }
 
     // MARK: - Button label
@@ -177,7 +174,7 @@ struct OnboardingView: View {
             await MainActor.run {
                 switch result {
                 case .proceed:
-                    performDownload()
+                    startConfirmedDownload()
                 case .cellularWarning:
                     showCellularWarning = true
                 case .insufficientStorage:
@@ -187,21 +184,14 @@ struct OnboardingView: View {
         }
     }
 
-    private func performDownload() {
+    /// Runs after preflight and any warning confirmation — no further checks.
+    private func startConfirmedDownload() {
         showCellularWarning = false
         showStorageWarning = false
         isActivating = true
 
         Task {
             do {
-                // Re-check storage at actual transfer start — the earlier check
-                // predates the user's confirmation and free space may have moved.
-                let storageResult = DownloadPreflight.checkStorage(modelSizeBytes: model.fileSizeBytes)
-                guard storageResult == .proceed else {
-                    await MainActor.run { showStorageWarning = true }
-                    isActivating = false
-                    return
-                }
                 if !downloadManager.isModelDownloaded(model) {
                     _ = try await downloadManager.downloadAsync(model)
                 }
@@ -230,42 +220,4 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Error Banner
-
-    private func errorBanner(message: String) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Error: \(message)")
-            Spacer()
-            Button {
-                withAnimation(.spring(response: 0.3)) {
-                    errorMessage = nil
-                }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss error")
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.orange.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-        )
-    }
 }
