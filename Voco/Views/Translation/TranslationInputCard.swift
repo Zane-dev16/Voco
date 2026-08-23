@@ -15,6 +15,8 @@ struct TranslationInputCard: View {
     let workspaceTextSize: CGFloat
     let isRecording: Bool
     let supportsSTT: Bool
+    /// Right-to-left script for the source language — aligns the editor.
+    var isRTL: Bool = false
     let onToggleRecording: () -> Void
     /// Parent-side clear side effects (cancel translation, reset output/error).
     let onClear: () -> Void
@@ -24,6 +26,7 @@ struct TranslationInputCard: View {
             TextEditor(text: $inputText)
                 .font(.system(size: workspaceTextSize, weight: .regular, design: .rounded))
                 .focused($isInputFocused)
+                .environment(\.layoutDirection, isRTL ? .rightToLeft : .leftToRight)
                 .scrollContentBackground(.hidden)
                 // minHeight instead of fixed height so input isn't clipped
                 // at large Dynamic Type sizes.
@@ -36,6 +39,7 @@ struct TranslationInputCard: View {
                             .foregroundStyle(.tertiary)
                             .padding(.top, 8)
                             .allowsHitTesting(false)
+                            .environment(\.layoutDirection, isRTL ? .rightToLeft : .leftToRight)
                     }
                 }
                 .padding(.horizontal, 20)

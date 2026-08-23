@@ -22,6 +22,28 @@ struct SupportedLanguage: Identifiable, Hashable, Comparable {
     let flag: String         // Flag emoji
     let hunyuanName: String? // Tencent Hunyuan-specific name, nil if unsupported
 
+    /// Native-script name (e.g. "Español", "日本語") for multilingual search.
+    /// nil falls back to displayName.
+    var nativeName: String?
+
+    /// BCP-47 tag for speech services when it differs from `id`
+    /// (tl → "fil-PH", zh → "zh-CN", yue → "zh-HK"). nil means use `id`.
+    var bcp47Tag: String?
+
+    /// Right-to-left script (Arabic, Hebrew, Persian, Urdu, Uyghur).
+    var isRTL: Bool = false
+
+    /// The native name to display/search, falling back to displayName.
+    var effectiveNativeName: String {
+        guard let nativeName, !nativeName.isEmpty else { return displayName }
+        return nativeName
+    }
+
+    /// The tag speech services should use for this language.
+    var speechLocaleID: String {
+        bcp47Tag ?? id
+    }
+
     /// Runtime-detected: source language has offline STT voice pack.
     var supportsOfflineSTT: Bool = false
     /// Runtime-detected: target language has offline TTS voice pack.
@@ -79,92 +101,94 @@ final class LanguageRegistry: ObservableObject {
 
         // Helper to add a language
         func add(_ id: String, _ name: String, _ flag: String,
-                 hunyuan: String? = nil) {
+                 hunyuan: String? = nil, native: String? = nil,
+                 bcp47: String? = nil, rtl: Bool = false) {
             list.append(SupportedLanguage(
                 id: id, displayName: name, promptName: name,
-                flag: flag, hunyuanName: hunyuan
+                flag: flag, hunyuanName: hunyuan,
+                nativeName: native, bcp47Tag: bcp47, isRTL: rtl
             ))
         }
 
         // --- European Languages ---
-        add("en", "English", "\u{1F1EC}\u{1F1E7}", hunyuan: "English")
-        add("es", "Spanish", "\u{1F1EA}\u{1F1F8}", hunyuan: "Spanish")
-        add("fr", "French", "\u{1F1EB}\u{1F1F7}", hunyuan: "French")
-        add("de", "German", "\u{1F1E9}\u{1F1EA}", hunyuan: "German")
-        add("it", "Italian", "\u{1F1EE}\u{1F1F9}", hunyuan: "Italian")
-        add("pt", "Portuguese", "\u{1F1E7}\u{1F1F7}", hunyuan: "Portuguese")
-        add("nl", "Dutch", "\u{1F1F3}\u{1F1F1}")
-        add("pl", "Polish", "\u{1F1F5}\u{1F1F1}")
-        add("ru", "Russian", "\u{1F1F7}\u{1F1FA}", hunyuan: "Russian")
-        add("uk", "Ukrainian", "\u{1F1FA}\u{1F1E6}")
-        add("ro", "Romanian", "\u{1F1F7}\u{1F1F4}")
-        add("cs", "Czech", "\u{1F1E8}\u{1F1FF}")
-        add("sv", "Swedish", "\u{1F1F8}\u{1F1EA}")
-        add("da", "Danish", "\u{1F1E9}\u{1F1F0}")
-        add("fi", "Finnish", "\u{1F1EB}\u{1F1EE}")
-        add("nb", "Norwegian", "\u{1F1F3}\u{1F1F4}")
-        add("el", "Greek", "\u{1F1EC}\u{1F1F7}")
-        add("hu", "Hungarian", "\u{1F1ED}\u{1F1FA}")
-        add("bg", "Bulgarian", "\u{1F1E7}\u{1F1EC}")
-        add("sr", "Serbian", "\u{1F1F7}\u{1F1F8}")
-        add("hr", "Croatian", "\u{1F1ED}\u{1F1F7}")
-        add("sk", "Slovak", "\u{1F1F8}\u{1F1F0}")
-        add("sl", "Slovenian", "\u{1F1F8}\u{1F1EE}")
-        add("et", "Estonian", "\u{1F1EA}\u{1F1EA}")
-        add("lv", "Latvian", "\u{1F1F1}\u{1F1FB}")
-        add("lt", "Lithuanian", "\u{1F1F1}\u{1F1F9}")
-        add("tr", "Turkish", "\u{1F1F9}\u{1F1F7}")
-        add("ca", "Catalan", "\u{1F1E8}\u{1F1F4}")
-        add("gl", "Galician", "\u{1F1EC}\u{1F1FA}")
+        add("en", "English", "\u{1F1EC}\u{1F1E7}", hunyuan: "English", native: "English")
+        add("es", "Spanish", "\u{1F1EA}\u{1F1F8}", hunyuan: "Spanish", native: "Español")
+        add("fr", "French", "\u{1F1EB}\u{1F1F7}", hunyuan: "French", native: "Français")
+        add("de", "German", "\u{1F1E9}\u{1F1EA}", hunyuan: "German", native: "Deutsch")
+        add("it", "Italian", "\u{1F1EE}\u{1F1F9}", hunyuan: "Italian", native: "Italiano")
+        add("pt", "Portuguese", "\u{1F1E7}\u{1F1F7}", hunyuan: "Portuguese", native: "Português")
+        add("nl", "Dutch", "\u{1F1F3}\u{1F1F1}", native: "Nederlands")
+        add("pl", "Polish", "\u{1F1F5}\u{1F1F1}", native: "Polski")
+        add("ru", "Russian", "\u{1F1F7}\u{1F1FA}", hunyuan: "Russian", native: "Русский")
+        add("uk", "Ukrainian", "\u{1F1FA}\u{1F1E6}", native: "Українська")
+        add("ro", "Romanian", "\u{1F1F7}\u{1F1F4}", native: "Română")
+        add("cs", "Czech", "\u{1F1E8}\u{1F1FF}", native: "Čeština")
+        add("sv", "Swedish", "\u{1F1F8}\u{1F1EA}", native: "Svenska")
+        add("da", "Danish", "\u{1F1E9}\u{1F1F0}", native: "Dansk")
+        add("fi", "Finnish", "\u{1F1EB}\u{1F1EE}", native: "Suomi")
+        add("nb", "Norwegian", "\u{1F1F3}\u{1F1F4}", native: "Norsk bokmål")
+        add("el", "Greek", "\u{1F1EC}\u{1F1F7}", native: "Ελληνικά")
+        add("hu", "Hungarian", "\u{1F1ED}\u{1F1FA}", native: "Magyar")
+        add("bg", "Bulgarian", "\u{1F1E7}\u{1F1EC}", native: "Български")
+        add("sr", "Serbian", "\u{1F1F7}\u{1F1F8}", native: "Српски")
+        add("hr", "Croatian", "\u{1F1ED}\u{1F1F7}", native: "Hrvatski")
+        add("sk", "Slovak", "\u{1F1F8}\u{1F1F0}", native: "Slovenčina")
+        add("sl", "Slovenian", "\u{1F1F8}\u{1F1EE}", native: "Slovenščina")
+        add("et", "Estonian", "\u{1F1EA}\u{1F1EA}", native: "Eesti")
+        add("lv", "Latvian", "\u{1F1F1}\u{1F1FB}", native: "Latviešu")
+        add("lt", "Lithuanian", "\u{1F1F1}\u{1F1F9}", native: "Lietuvių")
+        add("tr", "Turkish", "\u{1F1F9}\u{1F1F7}", hunyuan: "Turkish", native: "Türkçe")
+        add("ca", "Catalan", "\u{1F1E8}\u{1F1F4}", native: "Català")
+        add("gl", "Galician", "\u{1F1EC}\u{1F1FA}", native: "Galego")
 
         // --- Asian Languages ---
-        add("zh", "Chinese (Simplified)", "\u{1F1E8}\u{1F1F3}", hunyuan: "Chinese")
-        add("zh-TW", "Chinese (Traditional)", "\u{1F1F9}\u{1F1FC}", hunyuan: "Traditional Chinese")
-        add("ja", "Japanese", "\u{1F1EF}\u{1F1F5}", hunyuan: "Japanese")
-        add("ko", "Korean", "\u{1F1F0}\u{1F1F7}", hunyuan: "Korean")
-        add("th", "Thai", "\u{1F1F9}\u{1F1ED}")
-        add("vi", "Vietnamese", "\u{1F1FB}\u{1F1F3}")
-        add("id", "Indonesian", "\u{1F1EE}\u{1F1E9}")
-        add("ms", "Malay", "\u{1F1F2}\u{1F1FE}")
-        add("tl", "Filipino", "\u{1F1F5}\u{1F1ED}")
-        add("my", "Burmese", "\u{1F1E7}\u{1F1F2}")
-        add("km", "Khmer", "\u{1F1F0}\u{1F1ED}")
-        add("lo", "Lao", "\u{1F1F1}\u{1F1E6}")
+        add("zh", "Chinese (Simplified)", "\u{1F1E8}\u{1F1F3}", hunyuan: "Chinese", native: "简体中文", bcp47: "zh-CN")
+        add("zh-TW", "Chinese (Traditional)", "\u{1F1F9}\u{1F1FC}", hunyuan: "Traditional Chinese", native: "繁體中文")
+        add("ja", "Japanese", "\u{1F1EF}\u{1F1F5}", hunyuan: "Japanese", native: "日本語")
+        add("ko", "Korean", "\u{1F1F0}\u{1F1F7}", hunyuan: "Korean", native: "한국어")
+        add("th", "Thai", "\u{1F1F9}\u{1F1ED}", native: "ไทย")
+        add("vi", "Vietnamese", "\u{1F1FB}\u{1F1F3}", native: "Tiếng Việt")
+        add("id", "Indonesian", "\u{1F1EE}\u{1F1E9}", native: "Bahasa Indonesia")
+        add("ms", "Malay", "\u{1F1F2}\u{1F1FE}", native: "Bahasa Melayu")
+        add("tl", "Filipino", "\u{1F1F5}\u{1F1ED}", native: "Filipino", bcp47: "fil-PH")
+        add("my", "Burmese", "\u{1F1E7}\u{1F1F2}", native: "မြန်မာ")
+        add("km", "Khmer", "\u{1F1F0}\u{1F1ED}", native: "ខ្មែរ")
+        add("lo", "Lao", "\u{1F1F1}\u{1F1E6}", native: "ລາວ")
 
         // --- South Asian Languages ---
-        add("hi", "Hindi", "\u{1F1EE}\u{1F1F3}", hunyuan: "Hindi")
-        add("bn", "Bengali", "\u{1F1E7}\u{1F1E9}")
-        add("ta", "Tamil", "\u{1F1F9}\u{1F1F1}")
-        add("te", "Telugu", "\u{1F1F9}\u{1F1F0}")
-        add("mr", "Marathi", "\u{1F1F2}\u{1F1F8}")
-        add("ur", "Urdu", "\u{1F1FA}\u{1F1F2}")
-        add("gu", "Gujarati", "\u{1F1EC}\u{1F1F2}")
-        add("kn", "Kannada", "\u{1F1F0}\u{1F1F3}")
-        add("ml", "Malayalam", "\u{1F1F2}\u{1F1F1}")
-        add("pa", "Punjabi", "\u{1F1F5}\u{1F1F0}")
-        add("ne", "Nepali", "\u{1F1F3}\u{1F1F5}")
-        add("si", "Sinhala", "\u{1F1F1}\u{1F1F0}")
+        add("hi", "Hindi", "\u{1F1EE}\u{1F1F3}", hunyuan: "Hindi", native: "हिन्दी")
+        add("bn", "Bengali", "\u{1F1E7}\u{1F1E9}", native: "বাংলা")
+        add("ta", "Tamil", "\u{1F1F9}\u{1F1F1}", native: "தமிழ்")
+        add("te", "Telugu", "\u{1F1F9}\u{1F1F0}", native: "తెలుగు")
+        add("mr", "Marathi", "\u{1F1F2}\u{1F1F8}", native: "मराठी")
+        add("ur", "Urdu", "\u{1F1FA}\u{1F1F2}", native: "اردو", rtl: true)
+        add("gu", "Gujarati", "\u{1F1EC}\u{1F1F2}", native: "ગુજરાતી")
+        add("kn", "Kannada", "\u{1F1F0}\u{1F1F3}", native: "ಕನ್ನಡ")
+        add("ml", "Malayalam", "\u{1F1F2}\u{1F1F1}", native: "മലയാളം")
+        add("pa", "Punjabi", "\u{1F1F5}\u{1F1F0}", native: "ਪੰਜਾਬੀ")
+        add("ne", "Nepali", "\u{1F1F3}\u{1F1F5}", native: "नेपाली")
+        add("si", "Sinhala", "\u{1F1F1}\u{1F1F0}", native: "සිංහල")
 
         // --- Middle Eastern & African Languages ---
-        add("ar", "Arabic", "\u{1F1F8}\u{1F1E6}", hunyuan: "Arabic")
-        add("he", "Hebrew", "\u{1F1EE}\u{1F1F1}")
-        add("fa", "Persian", "\u{1F1EE}\u{1F1F7}")
-        add("sw", "Swahili", "\u{1F1F8}\u{1F1FF}")
-        add("am", "Amharic", "\u{1F1EA}\u{1F1F9}")
-        add("yo", "Yoruba", "\u{1F1F3}\u{1F1EC}")
-        add("ig", "Igbo", "\u{1F1EE}\u{1F1EC}")
-        add("ha", "Hausa", "\u{1F1ED}\u{1F1F3}")
-        add("zu", "Zulu", "\u{1F1FF}\u{1F1E6}")
-        add("af", "Afrikaans", "\u{1F1E6}\u{1F1FF}")
+        add("ar", "Arabic", "\u{1F1F8}\u{1F1E6}", hunyuan: "Arabic", native: "العربية", rtl: true)
+        add("he", "Hebrew", "\u{1F1EE}\u{1F1F1}", native: "עברית", rtl: true)
+        add("fa", "Persian", "\u{1F1EE}\u{1F1F7}", native: "فارسی", rtl: true)
+        add("sw", "Swahili", "\u{1F1F8}\u{1F1FF}", native: "Kiswahili")
+        add("am", "Amharic", "\u{1F1EA}\u{1F1F9}", native: "አማርኛ")
+        add("yo", "Yoruba", "\u{1F1F3}\u{1F1EC}", native: "Yorùbá")
+        add("ig", "Igbo", "\u{1F1EE}\u{1F1EC}", native: "Igbo")
+        add("ha", "Hausa", "\u{1F1ED}\u{1F1F3}", native: "Hausa")
+        add("zu", "Zulu", "\u{1F1FF}\u{1F1E6}", native: "isiZulu")
+        add("af", "Afrikaans", "\u{1F1E6}\u{1F1FF}", native: "Afrikaans")
 
         // --- Central Asian Languages (Hy-MT ethnic/dialect set) ---
-        add("bo", "Tibetan", "\u{1F1AD}\u{1F1F0}", hunyuan: "Tibetan")
-        add("kk", "Kazakh", "\u{1F1F0}\u{1F1FF}", hunyuan: "Kazakh")
-        add("mn", "Mongolian", "\u{1F1F2}\u{1F1F3}", hunyuan: "Mongolian")
-        add("ug", "Uyghur", "\u{1F1FA}\u{1F1EC}", hunyuan: "Uyghur")
+        add("bo", "Tibetan", "\u{1F1AD}\u{1F1F0}", hunyuan: "Tibetan", native: "བོད་སྐད་")
+        add("kk", "Kazakh", "\u{1F1F0}\u{1F1FF}", hunyuan: "Kazakh", native: "Қазақ тілі")
+        add("mn", "Mongolian", "\u{1F1F2}\u{1F1F3}", hunyuan: "Mongolian", native: "Монгол")
+        add("ug", "Uyghur", "\u{1F1FA}\u{1F1EC}", hunyuan: "Uyghur", native: "ئۇيغۇرچە", rtl: true)
 
         // --- Chinese variants (HY-MT dialect set) ---
-        add("yue", "Cantonese", "\u{1F1ED}\u{1F1F0}", hunyuan: "Cantonese")
+        add("yue", "Cantonese", "\u{1F1ED}\u{1F1F0}", hunyuan: "Cantonese", native: "廣東話", bcp47: "zh-HK")
 
         return list.sorted()
     }
@@ -205,9 +229,15 @@ final class LanguageRegistry: ObservableObject {
         var supported = Set<String>()
 
         for lang in languages {
-            let hasVoice = voices.contains { voice in
-                voice.language.hasPrefix(lang.languageCode) ||
-                voice.language == lang.id
+            // Variant-tagged languages (zh-CN vs zh-TW vs zh-HK, fil-PH) match
+            // exactly so Chinese variants don't conflate; plain ISO codes keep
+            // the broad prefix match.
+            let hasVoice: Bool
+            if lang.bcp47Tag != nil || lang.id.contains("-") {
+                hasVoice = voices.contains { $0.language == lang.speechLocaleID }
+                    || voices.contains { $0.language.hasPrefix(lang.speechLocaleID) }
+            } else {
+                hasVoice = voices.contains { $0.language.hasPrefix(lang.languageCode) }
             }
             if hasVoice {
                 supported.insert(lang.id)

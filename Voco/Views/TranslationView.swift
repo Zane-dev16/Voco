@@ -23,9 +23,16 @@ struct TranslationView: View {
     @State private var inputText: String = ""
     @State private var outputText: String = ""
     // Registry-backed language IDs — every advertised language is selectable,
-    // not just the legacy 12-case enum (S7-13).
-    @State private var sourceLanguageID = "en"
-    @State private var targetLanguageID = "es"
+    // not just the legacy 12-case enum (S7-13). Persisted across launches (S7-15).
+    @AppStorage("voco.sourceLanguageID") private var sourceLanguageID = "en"
+    @AppStorage("voco.targetLanguageID") private var targetLanguageID = "es"
+
+    /// Recently used target languages, most recent first ("id,id,id").
+    @AppStorage("voco.recentTargetIDs") private var recentTargetIDsRaw = ""
+
+    private var recentTargetIDs: [String] {
+        recentTargetIDsRaw.split(separator: ",").map(String.init)
+    }
     @State private var isTranslating: Bool = false
     @State private var showShareSheet = false
     @State private var showCopyToast = false
@@ -38,6 +45,7 @@ struct TranslationView: View {
     @State private var translationTask: Task<Void, Never>?
     @State private var swapRotation: Double = 0
     @State private var translationComplete: Bool = false
+    @State private var dictationNeedsSettings = false
     @State private var showSourceLanguagePicker = false
     @State private var showTargetLanguagePicker = false
 
@@ -58,6 +66,19 @@ struct TranslationView: View {
     /// Whether the target language supports offline TTS (speech output).
     private var targetSupportsTTS: Bool {
         targetLanguage?.supportsOfflineTTS ?? false
+    }
+
+    /// Whether the target language reads right-to-left (S7-19).
+    private var targetSupportsRTL: Bool {
+        targetLanguage?.isRTL ?? false
+    }
+
+    private var outputAlignment: TextAlignment {
+        targetSupportsRTL ? .trailing : .leading
+    }
+
+    private var outputLayoutDirection: LayoutDirection {
+        targetSupportsRTL ? .rightToLeft : .leftToRight
     }
 
     // MARK: - Services
@@ -93,6 +114,20 @@ struct TranslationView: View {
         selectedModel?.supportedLanguageCodes.map(Set.init)
     }
 
+    /// Keep persisted selections valid for the current model: a pair saved for
+    /// Hy-MT may be unsupported on Llama 3.2 — fall back to the defaults
+    /// instead of letting an unsupported request through.
+    private func sanitizePersistedLanguages() {
+        guard let allowed = selectableLanguageIDs else { return }
+        if !allowed.contains(sourceLanguageID), allowed.contains("en") {
+            sourceLanguageID = "en"
+        }
+        if !allowed.contains(targetLanguageID), allowed.contains("es") {
+            targetLanguageID = "es"
+        }
+        recentTargetIDsRaw = recentTargetIDs.filter { allowed.contains($0) }.joined(separator: ",")
+    }
+
     private var canTranslate: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isTranslating
     }
@@ -116,6 +151,7 @@ struct TranslationView: View {
                         sourceLanguageID: $sourceLanguageID,
                         targetLanguageID: $targetLanguageID,
                         allowedIDs: selectableLanguageIDs,
+                        recentTargetIDs: recentTargetIDs,
                         onSwap: swapLanguages
                     )
                     .padding(.horizontal, 20)
@@ -129,6 +165,7 @@ struct TranslationView: View {
                         workspaceTextSize: workspaceTextSize,
                         isRecording: isRecording,
                         supportsSTT: sourceSupportsSTT,
+                        isRTL: sourceLanguage?.isRTL ?? false,
                         onToggleRecording: toggleRecording,
                         onClear: clearInput
                     )
@@ -163,8 +200,19 @@ struct TranslationView: View {
             // Error overlay
             if let error = errorMessage {
                 VStack {
-                    ErrorBanner(message: error) {
-                        errorMessage = nil
+                    Group {
+                        if dictationNeedsSettings {
+                            ErrorBanner(
+                                message: error,
+                                onDismiss: { errorMessage = nil },
+                                actionTitle: "Open Settings",
+                                action: openSystemSettings
+                            )
+                        } else {
+                            ErrorBanner(message: error) {
+                                errorMessage = nil
+                            }
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
@@ -172,7 +220,19 @@ struct TranslationView: View {
                 }
             }
         }
-        .onAppear { haptic.prepare() }
+        .onAppear {
+            haptic.prepare()
+            sanitizePersistedLanguages()
+        }
+        .onChange(of: targetLanguageID) { _, newID in
+            translationComplete = false
+            // Recent targets, most-recent-first, deduped, capped at 4.
+            var updated = [newID]
+            for recentID in recentTargetIDs where recentID != newID && updated.count < 4 {
+                updated.append(recentID)
+            }
+            recentTargetIDsRaw = updated.joined(separator: ",")
+        }
         .onDisappear {
             // Stop the toast hide timer so it can't fire after the view is gone.
             copyToastHideTask?.cancel()
@@ -187,6 +247,9 @@ struct TranslationView: View {
             translationComplete = false
         }
         .onChange(of: selectedModelID) { _, _ in
+            // Model switches change the allowed language set — re-validate the
+            // persisted pair against it before anything else uses it.
+            sanitizePersistedLanguages()
             // Switching models tears the engine down (lifecycle manager cancels
             // in-flight producers before unload) — cancel the consumer-side task
             // too so UI state resets deterministically instead of racing the
@@ -290,7 +353,8 @@ struct TranslationView: View {
                     Text(outputText)
                         .font(.system(size: workspaceTextSize, weight: .medium, design: .rounded))
                         .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
+                        .multilineTextAlignment(outputAlignment)
+                        .environment(\.layoutDirection, outputLayoutDirection)
                         .lineSpacing(6)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 20)
@@ -342,6 +406,11 @@ struct TranslationView: View {
 
     /// Clear button side effects — the input card owns the button, this view
     /// owns cancelling in-flight work and resetting results.
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
     private func clearInput() {
         translationTask?.cancel()
         translationTask = nil
@@ -395,7 +464,7 @@ struct TranslationView: View {
 
     private func speakOutput() {
         guard !outputText.isEmpty, let targetLanguage else { return }
-        let voices = ttsService.availableVoices(forLanguage: targetLanguage.languageCode)
+        let voices = ttsService.availableVoices(forLanguage: targetLanguage.speechLocaleID)
         ttsService.speak(outputText, voice: voices.first)
     }
 
@@ -410,11 +479,15 @@ struct TranslationView: View {
     private func startRecording() {
         Task {
             let granted = await SpeechService.requestPermissions()
-            guard granted else { return }
+            guard granted else {
+                errorMessage = "Microphone and speech access are disabled for Voco."
+                dictationNeedsSettings = true
+                return
+            }
 
             do {
                 guard let sourceLanguage else { return }
-                let locale = Locale(identifier: sourceLanguage.id)
+                let locale = Locale(identifier: sourceLanguage.speechLocaleID)
                 let service = try SpeechService(locale: locale)
                 service.onTranscription = { text in
                     Task { @MainActor in
@@ -431,13 +504,16 @@ struct TranslationView: View {
                         self.speechService = nil
                     }
                 }
-                service.onError = { _ in
+                service.onError = { error in
                     Task { @MainActor in
                         self.isRecording = false
                         self.speechService?.stopRecording()
                         self.speechService = nil
+                        self.dictationNeedsSettings = false
+                        self.errorMessage = error.localizedDescription
                     }
                 }
+                dictationNeedsSettings = false
                 try service.startRecording()
                 await MainActor.run {
                     self.speechService = service

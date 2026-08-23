@@ -15,6 +15,8 @@ struct LanguageSelectorBar: View {
     /// Languages the active model can translate; nil = unrestricted. Rows
     /// outside this set are not offered, so a selection can never be dropped.
     var allowedIDs: Set<String>?
+    /// Recently used target language IDs, most recent first.
+    var recentTargetIDs: [String] = []
     /// Parent-side swap side effects (moving output back to input, etc.).
     /// Called inside the same animation block as the rotation.
     let onSwap: () -> Void
@@ -133,6 +135,7 @@ struct LanguageSelectorBar: View {
                 title: "Target Language",
                 selectedLanguageID: targetLanguageID,
                 allowedIDs: allowedIDs,
+                recentIDs: recentTargetIDs,
                 onSelect: { targetLanguageID = $0.id }
             )
             .environmentObject(languageRegistry)

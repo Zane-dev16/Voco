@@ -17,6 +17,9 @@ struct LanguageSelectionView: View {
     /// When set, only these registry IDs are offered — the set of languages
     /// the active model can actually translate.
     var allowedIDs: Set<String>?
+    /// Recently used language IDs, most recent first. Shown as a section
+    /// while no search filter is active.
+    var recentIDs: [String] = []
     let onSelect: (SupportedLanguage) -> Void
 
     @State private var searchText = ""
@@ -33,8 +36,11 @@ struct LanguageSelectionView: View {
 
         // Filter by search text
         if !searchText.isEmpty {
+            // Native-script names ("Español", "日本語", "العربية") match too —
+            // users of a translation app are multilingual by definition.
             langs = langs.filter {
                 $0.displayName.localizedCaseInsensitiveContains(searchText) ||
+                $0.effectiveNativeName.localizedCaseInsensitiveContains(searchText) ||
                 $0.id.localizedCaseInsensitiveContains(searchText)
             }
         }
@@ -47,12 +53,37 @@ struct LanguageSelectionView: View {
         return langs
     }
 
-    /// Languages grouped by voice capability.
+    /// Recent selections resolved against the current list.
+    private var recentLanguages: [SupportedLanguage] {
+        guard searchText.isEmpty else { return [] }
+        return recentIDs.compactMap { id in
+            filteredLanguages.first { $0.id == id }
+        }
+    }
+
+    /// Languages grouped by voice capability, with a recents section on top.
     private var groupedLanguages: [(String, [SupportedLanguage])] {
         let voice = filteredLanguages.filter { $0.supportsVoice }
         let textOnly = filteredLanguages.filter { !$0.supportsVoice }
 
         var groups: [(String, [SupportedLanguage])] = []
+
+        let recent = recentLanguages
+        let recentSet = Set(recent.map(\.id))
+        if !recent.isEmpty {
+            groups.append(("Recent", recent))
+            // Avoid listing recents twice in the sections below.
+            if !voice.isEmpty {
+                let remaining = voice.filter { !recentSet.contains($0.id) }
+                if !remaining.isEmpty { groups.append(("Voice & Text", remaining)) }
+            }
+            if !textOnly.isEmpty {
+                let remaining = textOnly.filter { !recentSet.contains($0.id) }
+                if !remaining.isEmpty { groups.append(("Text Only", remaining)) }
+            }
+            return groups
+        }
+
         if !voice.isEmpty {
             groups.append(("Voice & Text", voice))
         }
@@ -142,7 +173,8 @@ private struct LanguageRow: View {
                     .font(.body)
                     .fontWeight(isSelected ? .semibold : .regular)
 
-                Text(language.id)
+                Text(language.effectiveNativeName == language.displayName
+                     ? language.id : language.effectiveNativeName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

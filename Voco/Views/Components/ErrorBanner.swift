@@ -11,6 +11,21 @@ import SwiftUI
 struct ErrorBanner: View {
     let message: String
     var onDismiss: (() -> Void)?
+    /// Optional recovery action (e.g. "Open Settings" for permission errors).
+    var actionTitle: String?
+    var action: (() -> Void)?
+
+    init(
+        message: String,
+        onDismiss: (() -> Void)? = nil,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) {
+        self.message = message
+        self.onDismiss = onDismiss
+        self.actionTitle = actionTitle
+        self.action = action
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -23,6 +38,13 @@ struct ErrorBanner: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Error: \(message)")
+            VStack(alignment: .trailing, spacing: 4) {
+                if let actionTitle, let action {
+                    Button(actionTitle, action: action)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.orange)
+                }
+            }
             Spacer()
             if let onDismiss {
                 Button {
