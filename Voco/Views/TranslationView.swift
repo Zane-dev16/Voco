@@ -152,7 +152,16 @@ struct TranslationView: View {
             translationComplete = false
         }
         .onChange(of: selectedModelID) { _, _ in
-            translationComplete = false
+            // Switching models tears the engine down (lifecycle manager cancels
+            // in-flight producers before unload) — cancel the consumer-side task
+            // too so UI state resets deterministically instead of racing the
+            // stream's natural end.
+            translationTask?.cancel()
+            translationTask = nil
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                isTranslating = false
+                translationComplete = false
+            }
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [outputText])

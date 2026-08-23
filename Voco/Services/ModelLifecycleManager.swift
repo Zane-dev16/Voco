@@ -44,6 +44,13 @@ final class ModelLifecycleManager {
 
     private let inferenceService = TranslationService()
     private let downloadManager: ModelManagerService
+
+    /// Monotonic token distinguishing one activation/deactivation attempt from
+    /// the next. Every async step re-checks it after each suspension point; a
+    /// superseded attempt discards its results instead of clobbering the state
+    /// written by its successor (the "user tapped B, engine holds A" race).
+    /// All mutations happen on the main actor, so read-increment pairs are atomic.
+    private var activationGeneration = 0
     /// nonisolated(unsafe): the token is written once on the main actor in init
     /// and only read from deinit; NSObjectProtocol isn't Sendable so a plain
     /// stored property can't be touched from nonisolated deinit under Swift 6.
@@ -78,18 +85,38 @@ final class ModelLifecycleManager {
 
     /// Switch to a new model — deactivate the current one first, then activate.
     /// Centralises the deactivate→activate sequence that callers otherwise duplicate.
+    /// Both halves share one generation so a newer switchTo supersedes this
+    /// attempt at its next checkpoint instead of interleaving destructively.
     func switchTo(_ model: TranslationModel) async throws {
+        activationGeneration += 1
+        let generation = activationGeneration
+
         if activeModelID != nil {
-            await deactivate()
+            await performDeactivate(generation: generation)
+            try Task.checkCancellation()
+            guard generation == activationGeneration else { throw CancellationError() }
         }
-        try await activate(model)
+        try await activate(model, generation: generation)
     }
 
     /// Activate a local model — download if needed, then load into memory.
     func activate(_ model: TranslationModel) async throws {
+        activationGeneration += 1
+        try await activate(model, generation: activationGeneration)
+    }
+
+    /// Internal activation bound to a specific generation. Throws
+    /// CancellationError when superseded, leaving state management to whichever
+    /// attempt holds the current generation — never writes state after losing
+    /// the race.
+    private func activate(_ model: TranslationModel, generation: Int) async throws {
         guard model.id != activeModelID else { return }
 
-        if activeModelID != nil { await deactivate() }
+        if activeModelID != nil {
+            await performDeactivate(generation: generation)
+            try Task.checkCancellation()
+            guard generation == activationGeneration else { throw CancellationError() }
+        }
 
         // RAM preflight: the model needs at least fileSize + 1.5 GB working-set
         // headroom. Fail fast with a typed error instead of proceeding after a
@@ -111,18 +138,32 @@ final class ModelLifecycleManager {
 
         do {
             let url = try await resolveModelURL(model)
-            try await inferenceService.loadModel(model, at: url)
+            try Task.checkCancellation()
+            guard generation == activationGeneration else { throw CancellationError() }
+            // isStillCurrent is evaluated inside loadModel's synchronous mutation
+            // section, so a superseded activation can never install an engine —
+            // checking here alone would leave a window across the await boundary.
+            try await inferenceService.loadModel(model, at: url) { [weak self] in
+                self?.isGenerationCurrent(generation) ?? false
+            }
         } catch {
             // Without this, a failed download/load leaves lifecycleState stuck in
-            // .loading forever and the .error case is never reached.
+            // .loading forever and the .error case is never reached. Superseded
+            // attempts skip the write entirely — their successor owns the state.
+            guard generation == activationGeneration else { throw error }
             activeModelID = nil
             lifecycleState = .error(error.localizedDescription)
             VocoLog.models.error("[ModelLifecycle] Failed to activate '\(model.displayName)': \(error.localizedDescription)")
             throw error
         }
 
+        guard generation == activationGeneration else { throw CancellationError() }
         activeModelID = model.id
         lifecycleState = .ready(model.id)
+    }
+
+    private func isGenerationCurrent(_ generation: Int) -> Bool {
+        generation == activationGeneration
     }
 
     /// Estimated available memory in bytes. Uses host_statistics64 for
@@ -160,11 +201,24 @@ final class ModelLifecycleManager {
     /// and model to fully release their file handles before any caller
     /// attempts to delete the GGUF file from disk.
     func deactivate() async {
+        activationGeneration += 1
+        await performDeactivate(generation: activationGeneration)
+    }
+
+    /// Deactivate bound to a generation. Cancels any in-flight translation
+    /// first (the streaming producer strongly retains the multi-GB engine, so
+    /// skipping this means unload never actually frees memory during active
+    /// generation), then unloads. The post-sleep `.idle` write only happens if
+    /// this attempt still holds the current generation — otherwise a successor
+    /// (e.g. the next activation) owns the state and must not be clobbered.
+    private func performDeactivate(generation: Int) async {
+        inferenceService.cancelInFlightTranslations()
         lifecycleState = .unloading
         inferenceService.unloadModel()
         activeModelID = nil
         // Allow actor deallocation and llama_model_free to release file handles.
         try? await Task.sleep(nanoseconds: 500_000_000) // 500 ms
+        guard generation == activationGeneration else { return }
         lifecycleState = .idle
     }
 

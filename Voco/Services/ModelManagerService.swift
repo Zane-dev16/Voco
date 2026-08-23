@@ -83,14 +83,20 @@ final class ModelManagerService {
     }
 
     /// Async wrapper — returns local URL on success. Uses continuation to avoid polling.
+    /// Cancelling the awaiting Task cancels the underlying URLSessionDownloadTask
+    /// (via cancelDownload), so an abandoned multi-GB activation stops downloading
+    /// instead of finishing in the background and loading the wrong model.
     func downloadAsync(_ model: TranslationModel) async throws -> URL {
         guard let targetURL = localURL(for: model) else {
-            // Need to download — use continuation
-            return try await withCheckedThrowingContinuation { continuation in
-                guard downloadTasks[model.id] == nil else {
-                    continuation.resume(throwing: LlamaError.noModelLoaded)
-                    return
-                }
+            let modelID = model.id
+            return try await withTaskCancellationHandler(operation: {
+                try await withCheckedThrowingContinuation { continuation in
+                    guard downloadTasks[model.id] == nil else {
+                        // Second waiter on an in-flight download — fail with the
+                        // closest truthful message rather than blocking forever.
+                        continuation.resume(throwing: LlamaError.noModelLoaded)
+                        return
+                    }
                 downloadStates[model.id] = .downloading(progress: 0)
 
                 let request = URLRequest(url: model.sourceURL)
@@ -129,7 +135,15 @@ final class ModelManagerService {
 
                 downloadTasks[modelID] = task
                 task.resume()
-            }
+                }
+            }, onCancel: { [weak self] in
+                // Runs synchronously, possibly off the main actor. cancelDownload
+                // is main-actor isolated, so hop back; the continuation is resumed
+                // by the delegate's failure callback exactly once.
+                Task { @MainActor [weak self] in
+                    self?.cancelDownload(for: modelID)
+                }
+            })
         }
         return targetURL
     }
