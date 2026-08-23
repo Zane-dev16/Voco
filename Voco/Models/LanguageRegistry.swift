@@ -119,7 +119,7 @@ final class LanguageRegistry: ObservableObject {
 
         // --- Asian Languages ---
         add("zh", "Chinese (Simplified)", "\u{1F1E8}\u{1F1F3}", hunyuan: "Chinese")
-        add("zh-TW", "Chinese (Traditional)", "\u{1F1F9}\u{1F1FC}")
+        add("zh-TW", "Chinese (Traditional)", "\u{1F1F9}\u{1F1FC}", hunyuan: "Traditional Chinese")
         add("ja", "Japanese", "\u{1F1EF}\u{1F1F5}", hunyuan: "Japanese")
         add("ko", "Korean", "\u{1F1F0}\u{1F1F7}", hunyuan: "Korean")
         add("th", "Thai", "\u{1F1F9}\u{1F1ED}")
@@ -157,11 +157,14 @@ final class LanguageRegistry: ObservableObject {
         add("zu", "Zulu", "\u{1F1FF}\u{1F1E6}")
         add("af", "Afrikaans", "\u{1F1E6}\u{1F1FF}")
 
-        // --- Central Asian Languages (Hy-MT2) ---
-        add("bo", "Tibetan", "\u{1F1AD}\u{1F1F0}")
-        add("kk", "Kazakh", "\u{1F1F0}\u{1F1FF}")
-        add("mn", "Mongolian", "\u{1F1F2}\u{1F1F3}")
-        add("ug", "Uyghur", "\u{1F1FA}\u{1F1EC}")
+        // --- Central Asian Languages (Hy-MT ethnic/dialect set) ---
+        add("bo", "Tibetan", "\u{1F1AD}\u{1F1F0}", hunyuan: "Tibetan")
+        add("kk", "Kazakh", "\u{1F1F0}\u{1F1FF}", hunyuan: "Kazakh")
+        add("mn", "Mongolian", "\u{1F1F2}\u{1F1F3}", hunyuan: "Mongolian")
+        add("ug", "Uyghur", "\u{1F1FA}\u{1F1EC}", hunyuan: "Uyghur")
+
+        // --- Chinese variants (HY-MT dialect set) ---
+        add("yue", "Cantonese", "\u{1F1ED}\u{1F1F0}", hunyuan: "Cantonese")
 
         return list.sorted()
     }

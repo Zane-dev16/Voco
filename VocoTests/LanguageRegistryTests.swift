@@ -23,9 +23,9 @@ struct LanguageRegistryTests {
 
     // MARK: - Registry Contents
 
-    @Test("Registry contains all 67 built-in languages")
+    @Test("Registry contains all 68 built-in languages")
     func registryCount() {
-        #expect(registry.languages.count == 67)
+        #expect(registry.languages.count == 68)
     }
 
     @Test("Language IDs are unique")

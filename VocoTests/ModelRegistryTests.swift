@@ -66,4 +66,41 @@ struct ModelRegistryTests {
                     "\(model.id) filename mismatch: \(model.filename) vs \(model.sourceURL.lastPathComponent)")
         }
     }
+
+    // MARK: - HY-MT Language Matrix Reconciliation
+
+    /// Tencent's official HY-MT matrix (HY-MT1.5 model card): 33 languages
+    /// (incl. zh + zh-Hant) plus 5 ethnic/dialect variants. zh-Hant maps to
+    /// Voco's registry id "zh-TW".
+    private static let hyMTOfficialCodes: Set<String> = [
+        "zh", "en", "fr", "pt", "es", "ja", "tr", "ru", "ar", "ko",
+        "th", "it", "de", "vi", "ms", "id", "tl", "hi", "zh-TW", "pl",
+        "cs", "nl", "km", "my", "fa", "gu", "ur", "te", "mr", "he",
+        "bn", "ta", "uk", "bo", "kk", "mn", "ug", "yue",
+    ]
+
+    @Test("Tencent HY-MT models match the official language matrix")
+    func hyMTMatrixMatchesOfficial() {
+        let hyMTModels = models.filter { $0.provider == "Tencent" }
+        #expect(!hyMTModels.isEmpty)
+        for model in hyMTModels {
+            let codes = Set(model.supportedLanguageCodes ?? [])
+            #expect(codes == Self.hyMTOfficialCodes,
+                    "\(model.id) codes diverge from Tencent HY-MT matrix; extra: \(codes.subtracting(Self.hyMTOfficialCodes)), missing: \(Self.hyMTOfficialCodes.subtracting(codes))")
+        }
+    }
+
+    @Test("Every supportedLanguageCode resolves to a registry entry")
+    func allCodesResolveInRegistry() {
+        for model in models {
+            for code in model.supportedLanguageCodes ?? [] {
+                #expect(registryContains(code), "\(model.id) references unknown language id '\(code)'")
+            }
+        }
+    }
+
+    @MainActor
+    private func registryContains(_ id: String) -> Bool {
+        LanguageRegistry.shared.language(forID: id) != nil
+    }
 }
