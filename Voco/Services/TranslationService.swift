@@ -18,6 +18,10 @@ final class TranslationService {
     /// stays resident until the stream drains to maxTokenCount.
     private var activeProducers: [UUID: Task<Void, Never>] = [:]
 
+    /// Monotonic request counter for streaming translations. Producers capture
+    /// their epoch and only issue engine stopCompletion while still current.
+    private var translationEpoch = 0
+
     /// Whether a model is currently loaded and ready for inference.
     var isModelLoaded: Bool {
         currentModel != nil
@@ -147,6 +151,11 @@ final class TranslationService {
             }
         }
 
+        // Each request gets an epoch so a stale producer's stopCompletion
+        // cleanup can never cancel its successor's generation (the engine
+        // already stops prior generations itself when a new request starts).
+        translationEpoch += 1
+        let myEpoch = translationEpoch
         let sampling = PromptBuilder.samplingConfig(from: model.config)
 
         if model.config.prompt.strategy == .raw {
@@ -162,7 +171,8 @@ final class TranslationService {
                 sampling: sampling,
                 addBos: model.config.prompt.addBos,
                 stopStrings: model.config.prompt.stopStrings,
-                marker: model.config.prompt.rawPromptMarker
+                marker: model.config.prompt.rawPromptMarker,
+                epoch: myEpoch
             )
         }
 
@@ -176,7 +186,8 @@ final class TranslationService {
             engine: engine,
             messages: messages,
             sampling: sampling,
-            stopStrings: model.config.prompt.stopStrings
+            stopStrings: model.config.prompt.stopStrings,
+            epoch: myEpoch
         )
     }
 
@@ -188,7 +199,8 @@ final class TranslationService {
         sampling: LlamaSamplingConfig,
         addBos: Bool?,
         stopStrings: [String],
-        marker: String?
+        marker: String?,
+        epoch: Int
     ) -> AsyncThrowingStream<String, any Error> {
         AsyncThrowingStream { continuation in
             let key = UUID()
@@ -197,7 +209,7 @@ final class TranslationService {
                 await self.runRawProducer(
                     key: key, engine: engine, prompt: prompt, sampling: sampling,
                     addBos: addBos, stopStrings: stopStrings, marker: marker,
-                    continuation: continuation
+                    epoch: epoch, continuation: continuation
                 )
             }
             // Main-actor serialization guarantees registration lands before the
@@ -206,7 +218,7 @@ final class TranslationService {
             continuation.onTermination = { termination in
                 guard case .cancelled = termination else { return }
                 producer.cancel()
-                Task { await engine.stopCompletion() }
+                Task { await self.stopEngineIfCurrent(epoch, engine: engine) }
             }
         }
     }
@@ -215,7 +227,8 @@ final class TranslationService {
         engine: SwiftLlama.LlamaEngine,
         messages: [LlamaChatMessage],
         sampling: LlamaSamplingConfig,
-        stopStrings: [String]
+        stopStrings: [String],
+        epoch: Int
     ) -> AsyncThrowingStream<String, any Error> {
         AsyncThrowingStream { continuation in
             let key = UUID()
@@ -224,16 +237,25 @@ final class TranslationService {
                 await self.runChatProducer(
                     key: key, engine: engine, messages: messages,
                     sampling: sampling, stopStrings: stopStrings,
-                    continuation: continuation
+                    epoch: epoch, continuation: continuation
                 )
             }
             registerProducer(producer, key: key)
             continuation.onTermination = { termination in
                 guard case .cancelled = termination else { return }
                 producer.cancel()
-                Task { await engine.stopCompletion() }
+                Task { await self.stopEngineIfCurrent(epoch, engine: engine) }
             }
         }
+    }
+
+    /// Stops the engine only while `epoch` is still the newest translation
+    /// request. The engine stops prior generations itself when a new request
+    /// initializes, so a stale producer's cleanup must be a no-op — otherwise
+    /// it silently truncates its successor's output.
+    private func stopEngineIfCurrent(_ epoch: Int, engine: SwiftLlama.LlamaEngine) async {
+        guard epoch == translationEpoch else { return }
+        await engine.stopCompletion()
     }
 
     private func runRawProducer(
@@ -244,57 +266,44 @@ final class TranslationService {
         addBos: Bool?,
         stopStrings: [String],
         marker: String?,
+        epoch: Int,
         continuation: AsyncThrowingStream<String, any Error>.Continuation
     ) async {
         defer { cleanupProducer(key) }
         do {
             let stream = try await engine.streamCompletionRaw(of: prompt, samplingConfig: sampling, addBos: addBos)
-            var buffer = ""
+            var assembler = StreamChunkAssembler(stopStrings: stopStrings, echoMarker: marker)
             var stopped = false
-            var markerFound = marker == nil  // If no marker, start yielding immediately
 
             for try await token in stream {
                 if stopped { break }
-                buffer += token
-
-                // Look for rawPromptMarker to detect end of prompt echo
-                if !markerFound {
-                    guard let (stripped, foundNow) = Self.stripThroughEchoMarker(buffer, marker: marker) else {
-                        // Marker not seen yet — keep accumulating, bounded so a
-                        // missing marker can't grow the buffer without limit.
-                        if buffer.count > 500 {
-                            buffer = String(buffer.suffix(200))
-                        }
-                        continue
+                for event in assembler.append(token) {
+                    switch event {
+                    case .emitted(let text):
+                        if !text.isEmpty { continuation.yield(text) }
+                    case .stopHit:
+                        stopped = true
+                    case .echoStripped, .thinkOpened, .thinkClosed:
+                        break  // Raw path has no think tags; echo is internal.
                     }
-                    buffer = stripped
-                    markerFound = foundNow
-                }
-
-                // Check stop strings (only after marker is found)
-                if let range = Self.firstStopRange(in: buffer, stopStrings: stopStrings) {
-                    let before = String(buffer[..<range.lowerBound])
-                    if !before.isEmpty { continuation.yield(before) }
-                    stopped = true
                 }
                 if stopped { break }
-
-                if buffer.count >= 4, Self.isSafeToFlush(buffer, stopStrings: stopStrings) {
-                    continuation.yield(buffer)
-                    buffer = ""
-                }
             }
 
             // Stop engine generation once we stop consuming (EOS, stop string,
             // cancellation, or error) so llama.cpp does not keep generating into
-            // a dead stream.
-            await engine.stopCompletion()
-            if !buffer.isEmpty && !stopped && markerFound {
-                continuation.yield(buffer)
+            // a dead stream. Epoch-guarded: a superseded producer must not
+            // truncate the request that replaced it.
+            if !Task.isCancelled {
+                await stopEngineIfCurrent(epoch, engine: engine)
+            }
+            let tail = assembler.flushRemaining()
+            if !stopped && assembler.echoConsumed && !tail.isEmpty {
+                continuation.yield(tail)
             }
             continuation.finish()
         } catch {
-            await engine.stopCompletion()
+            await stopEngineIfCurrent(epoch, engine: engine)
             finishAfterCancellation(error, continuation: continuation)
         }
     }
@@ -305,72 +314,69 @@ final class TranslationService {
         messages: [LlamaChatMessage],
         sampling: LlamaSamplingConfig,
         stopStrings: [String],
+        epoch: Int,
         continuation: AsyncThrowingStream<String, any Error>.Continuation
     ) async {
         defer { cleanupProducer(key) }
         do {
             let stream = try await engine.streamCompletion(of: messages, samplingConfig: sampling)
-            var buffer = ""
-            var inThinkBlock = false
+            var assembler = StreamChunkAssembler(stopStrings: stopStrings, watchesThinkTags: true)
             var stopped = false
-            var hasYielded = false  // Track whether we've yielded real content
+            var hasEmitted = false  // First emission trims leading newlines.
 
             for try await token in stream {
                 if stopped { break }
-                buffer += token
-
-                if let range = Self.firstStopRange(in: buffer, stopStrings: stopStrings) {
-                    let before = String(buffer[..<range.lowerBound])
-                    let out = hasYielded ? before : OutputProcessor.trimmingLeadingNewlines(before)
-                    if !out.isEmpty && !inThinkBlock {
-                        continuation.yield(out)
-                        hasYielded = true
+                for event in assembler.append(token) {
+                    switch event {
+                    case .emitted(let text):
+                        // Never produced inside a think block (the assembler's
+                        // watch list prevents it), so no suppression needed.
+                        emit(text, suppress: false, hasEmitted: &hasEmitted, continuation: continuation)
+                    case .thinkOpened(let before):
+                        // Text preceding <think> predates the block — emit it.
+                        emit(before, suppress: false, hasEmitted: &hasEmitted, continuation: continuation)
+                    case .stopHit(let before):
+                        // Stop wins even inside a think block; its text stays suppressed.
+                        emit(before, suppress: assembler.inThinkBlock, hasEmitted: &hasEmitted, continuation: continuation)
+                        stopped = true
+                    case .echoStripped, .thinkClosed:
+                        break
                     }
-                    stopped = true
                 }
                 if stopped { break }
-
-                if !inThinkBlock {
-                    if let range = buffer.range(of: "<think>") {
-                        let before = String(buffer[..<range.lowerBound])
-                        let out = hasYielded ? before : OutputProcessor.trimmingLeadingNewlines(before)
-                        if !out.isEmpty {
-                            continuation.yield(out)
-                            hasYielded = true
-                        }
-                        buffer = ""
-                        inThinkBlock = true
-                    } else if buffer.count > 20 {
-                        let out = hasYielded ? buffer : OutputProcessor.trimmingLeadingNewlines(buffer)
-                        if !out.isEmpty {
-                            continuation.yield(out)
-                            hasYielded = true
-                        }
-                        buffer = ""
-                    }
-                } else if let range = buffer.range(of: "</think>") {
-                    buffer = String(buffer[range.upperBound...])
-                    inThinkBlock = false
-                    if !buffer.isEmpty && buffer.range(of: "<think>") == nil {
-                        continuation.yield(buffer)
-                        buffer = ""
-                    }
-                }
             }
 
-            // Stop engine generation once we stop consuming — see raw path.
-            await engine.stopCompletion()
-            if !buffer.isEmpty && !inThinkBlock && !stopped {
-                let out = hasYielded ? buffer : OutputProcessor.trimmingLeadingNewlines(buffer)
-                if !out.isEmpty {
-                    continuation.yield(out)
-                }
+            if !Task.isCancelled {
+                await stopEngineIfCurrent(epoch, engine: engine)
+            }
+            if !stopped && !assembler.inThinkBlock {
+                emit(assembler.flushRemaining(), suppress: false, hasEmitted: &hasEmitted, continuation: continuation)
+            } else {
+                _ = assembler.flushRemaining()
             }
             continuation.finish()
         } catch {
-            await engine.stopCompletion()
+            await stopEngineIfCurrent(epoch, engine: engine)
             finishAfterCancellation(error, continuation: continuation)
         }
+    }
+
+    /// Emits text with first-emission leading-newline trimming. `suppress`
+    /// drops reasoning-era text (reasoning must never reach the user), matching
+    /// historical behavior.
+    private func emit(
+        _ rawText: String,
+        suppress: Bool,
+        hasEmitted: inout Bool,
+        continuation: AsyncThrowingStream<String, any Error>.Continuation
+    ) {
+        var text = rawText
+        if !hasEmitted {
+            text = OutputProcessor.trimmingLeadingNewlines(text)
+        }
+        guard !text.isEmpty, !suppress else { return }
+        continuation.yield(text)
+        hasEmitted = true
     }
 
     /// Deliberate cancellation ends with a plain finish so consumers don't
@@ -384,35 +390,6 @@ final class TranslationService {
         } else {
             continuation.finish(throwing: error)
         }
-    }
-
-    // MARK: - Stream Buffer Helpers
-
-    /// Strips the buffer through the end of the prompt-echo marker.
-    /// Returns nil when the marker hasn't arrived yet; otherwise returns the
-    /// content after the marker and `true`.
-    private static func stripThroughEchoMarker(_ buffer: String, marker: String?) -> (String, Bool)? {
-        guard let marker, let range = buffer.range(of: marker) else { return nil }
-        return (String(buffer[range.upperBound...]), true)
-    }
-
-    /// First stop-string occurrence in the buffer, if any.
-    private static func firstStopRange(in buffer: String, stopStrings: [String]) -> Range<String.Index>? {
-        guard !stopStrings.isEmpty else { return nil }
-        for stop in stopStrings where buffer.contains(stop) {
-            if let range = buffer.range(of: stop) {
-                return range
-            }
-        }
-        return nil
-    }
-
-    /// True when flushing the whole buffer cannot split a partially-received
-    /// stop string across a chunk boundary.
-    private static func isSafeToFlush(_ buffer: String, stopStrings: [String]) -> Bool {
-        !stopStrings.contains(where: { stop in
-            stop.hasPrefix(buffer) || buffer.hasPrefix(stop)
-        })
     }
 }
 
