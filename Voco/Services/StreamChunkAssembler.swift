@@ -67,20 +67,7 @@ nonisolated struct StreamChunkAssembler {
         var events: [Event] = []
 
         // Phase 1: prompt-echo gate (raw-format translation models).
-        if !echoConsumed {
-            if let marker = echoMarker, let range = buffer.range(of: marker) {
-                buffer = String(buffer[range.upperBound...])
-                echoConsumed = true
-                events.append(.echoStripped)
-            } else {
-                // Marker not seen yet — retain, bounded so a missing marker
-                // can't grow the buffer without limit.
-                if buffer.count > 500 {
-                    buffer = String(buffer.suffix(200))
-                }
-                return events
-            }
-        }
+        guard consumeEchoMarkerIfNeeded(into: &events) else { return events }
 
         // Phase 2: a completed stop string outranks everything else. Scanned
         // regardless of think state (matches historical behavior).
@@ -130,6 +117,23 @@ nonisolated struct StreamChunkAssembler {
         }
 
         return events
+    }
+
+    /// Consumes the prompt-echo marker when present. Returns false while still
+    /// waiting for it (buffer retained, bounded so a missing marker can't grow
+    /// the buffer without limit).
+    private mutating func consumeEchoMarkerIfNeeded(into events: inout [Event]) -> Bool {
+        guard !echoConsumed else { return true }
+        if let marker = echoMarker, let range = buffer.range(of: marker) {
+            buffer = String(buffer[range.upperBound...])
+            echoConsumed = true
+            events.append(.echoStripped)
+            return true
+        }
+        if buffer.count > 500 {
+            buffer = String(buffer.suffix(200))
+        }
+        return false
     }
 
     /// Remaining buffered text at end-of-stream. Always drain this after the
