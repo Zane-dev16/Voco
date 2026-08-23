@@ -22,6 +22,26 @@ final class TranslationService {
     /// their epoch and only issue engine stopCompletion while still current.
     private var translationEpoch = 0
 
+    /// Everything a raw-path producer needs, bundled to keep signatures small.
+    private struct RawStreamContext {
+        let engine: SwiftLlama.LlamaEngine
+        let prompt: String
+        let sampling: LlamaSamplingConfig
+        let addBos: Bool?
+        let stopStrings: [String]
+        let marker: String?
+        let epoch: Int
+    }
+
+    /// Everything a chat-path producer needs.
+    private struct ChatStreamContext {
+        let engine: SwiftLlama.LlamaEngine
+        let messages: [LlamaChatMessage]
+        let sampling: LlamaSamplingConfig
+        let stopStrings: [String]
+        let epoch: Int
+    }
+
     /// Whether a model is currently loaded and ready for inference.
     var isModelLoaded: Bool {
         currentModel != nil
@@ -35,6 +55,24 @@ final class TranslationService {
     init() {}
 
     // MARK: - Model Lifecycle
+
+    /// Enforces the active model's supportedLanguageCodes against the request.
+    /// Names arrive from the UI as registry-backed prompt names — resolve them
+    /// back to registry entries and check membership. Models without a code
+    /// list are unrestricted.
+    private func enforceSupportedLanguages(source: String, target: String, model: TranslationModel) throws {
+        guard let codes = model.supportedLanguageCodes else { return }
+        for name in [source, target] {
+            let lang = LanguageRegistry.shared.language(byName: name)
+                ?? LanguageRegistry.shared.languages.first {
+                    $0.promptName.caseInsensitiveCompare(name) == .orderedSame
+                        || $0.hunyuanName?.caseInsensitiveCompare(name) == .orderedSame
+                }
+            guard let lang, codes.contains(lang.id) else {
+                throw LlamaError.unsupportedLanguage(name)
+            }
+        }
+    }
 
     /// Loads a GGUF model from a local file URL using the model's own configuration.
     ///
@@ -106,10 +144,7 @@ final class TranslationService {
             throw LlamaError.noModelLoaded
         }
 
-        // Validate target language
-        guard model.supportedLanguages.contains(where: { $0.hunyuanTargetName == targetLanguage || $0.displayName == targetLanguage }) else {
-            throw LlamaError.unsupportedLanguage(targetLanguage)
-        }
+        try enforceSupportedLanguages(source: sourceLanguage, target: targetLanguage, model: model)
 
         let sampling = PromptBuilder.samplingConfig(from: model.config)
 
@@ -151,6 +186,14 @@ final class TranslationService {
             }
         }
 
+        do {
+            try enforceSupportedLanguages(source: sourceLanguage, target: targetLanguage, model: model)
+        } catch {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: error)
+            }
+        }
+
         // Each request gets an epoch so a stale producer's stopCompletion
         // cleanup can never cancel its successor's generation (the engine
         // already stops prior generations itself when a new request starts).
@@ -165,7 +208,7 @@ final class TranslationService {
                 targetLanguage: targetLanguage,
                 config: model.config
             )
-            return makeRawTokenStream(
+            return makeRawTokenStream(RawStreamContext(
                 engine: engine,
                 prompt: rawPrompt,
                 sampling: sampling,
@@ -173,7 +216,7 @@ final class TranslationService {
                 stopStrings: model.config.prompt.stopStrings,
                 marker: model.config.prompt.rawPromptMarker,
                 epoch: myEpoch
-            )
+            ))
         }
 
         let messages = PromptBuilder.buildMessages(
@@ -182,35 +225,23 @@ final class TranslationService {
             target: targetLanguage,
             config: model.config
         )
-        return makeChatTokenStream(
+        return makeChatTokenStream(ChatStreamContext(
             engine: engine,
             messages: messages,
             sampling: sampling,
             stopStrings: model.config.prompt.stopStrings,
             epoch: myEpoch
-        )
+        ))
     }
 
     // MARK: - Streaming Producers
 
-    private func makeRawTokenStream(
-        engine: SwiftLlama.LlamaEngine,
-        prompt: String,
-        sampling: LlamaSamplingConfig,
-        addBos: Bool?,
-        stopStrings: [String],
-        marker: String?,
-        epoch: Int
-    ) -> AsyncThrowingStream<String, any Error> {
+    private func makeRawTokenStream(_ context: RawStreamContext) -> AsyncThrowingStream<String, any Error> {
         AsyncThrowingStream { continuation in
             let key = UUID()
             let producer = Task { [weak self] in
                 guard let self else { return }
-                await self.runRawProducer(
-                    key: key, engine: engine, prompt: prompt, sampling: sampling,
-                    addBos: addBos, stopStrings: stopStrings, marker: marker,
-                    epoch: epoch, continuation: continuation
-                )
+                await self.runRawProducer(context: context, key: key, continuation: continuation)
             }
             // Main-actor serialization guarantees registration lands before the
             // producer body runs.
@@ -218,33 +249,23 @@ final class TranslationService {
             continuation.onTermination = { termination in
                 guard case .cancelled = termination else { return }
                 producer.cancel()
-                Task { await self.stopEngineIfCurrent(epoch, engine: engine) }
+                Task { await self.stopEngineIfCurrent(context.epoch, engine: context.engine) }
             }
         }
     }
 
-    private func makeChatTokenStream(
-        engine: SwiftLlama.LlamaEngine,
-        messages: [LlamaChatMessage],
-        sampling: LlamaSamplingConfig,
-        stopStrings: [String],
-        epoch: Int
-    ) -> AsyncThrowingStream<String, any Error> {
+    private func makeChatTokenStream(_ context: ChatStreamContext) -> AsyncThrowingStream<String, any Error> {
         AsyncThrowingStream { continuation in
             let key = UUID()
             let producer = Task { [weak self] in
                 guard let self else { return }
-                await self.runChatProducer(
-                    key: key, engine: engine, messages: messages,
-                    sampling: sampling, stopStrings: stopStrings,
-                    epoch: epoch, continuation: continuation
-                )
+                await self.runChatProducer(context: context, key: key, continuation: continuation)
             }
             registerProducer(producer, key: key)
             continuation.onTermination = { termination in
                 guard case .cancelled = termination else { return }
                 producer.cancel()
-                Task { await self.stopEngineIfCurrent(epoch, engine: engine) }
+                Task { await self.stopEngineIfCurrent(context.epoch, engine: context.engine) }
             }
         }
     }
@@ -259,20 +280,14 @@ final class TranslationService {
     }
 
     private func runRawProducer(
+        context: RawStreamContext,
         key: UUID,
-        engine: SwiftLlama.LlamaEngine,
-        prompt: String,
-        sampling: LlamaSamplingConfig,
-        addBos: Bool?,
-        stopStrings: [String],
-        marker: String?,
-        epoch: Int,
         continuation: AsyncThrowingStream<String, any Error>.Continuation
     ) async {
         defer { cleanupProducer(key) }
         do {
-            let stream = try await engine.streamCompletionRaw(of: prompt, samplingConfig: sampling, addBos: addBos)
-            var assembler = StreamChunkAssembler(stopStrings: stopStrings, echoMarker: marker)
+            let stream = try await context.engine.streamCompletionRaw(of: context.prompt, samplingConfig: context.sampling, addBos: context.addBos)
+            var assembler = StreamChunkAssembler(stopStrings: context.stopStrings, echoMarker: context.marker)
             var stopped = false
 
             for try await token in stream {
@@ -295,7 +310,7 @@ final class TranslationService {
             // a dead stream. Epoch-guarded: a superseded producer must not
             // truncate the request that replaced it.
             if !Task.isCancelled {
-                await stopEngineIfCurrent(epoch, engine: engine)
+                await stopEngineIfCurrent(context.epoch, engine: context.engine)
             }
             let tail = assembler.flushRemaining()
             if !stopped && assembler.echoConsumed && !tail.isEmpty {
@@ -303,24 +318,20 @@ final class TranslationService {
             }
             continuation.finish()
         } catch {
-            await stopEngineIfCurrent(epoch, engine: engine)
+            await stopEngineIfCurrent(context.epoch, engine: context.engine)
             finishAfterCancellation(error, continuation: continuation)
         }
     }
 
     private func runChatProducer(
+        context: ChatStreamContext,
         key: UUID,
-        engine: SwiftLlama.LlamaEngine,
-        messages: [LlamaChatMessage],
-        sampling: LlamaSamplingConfig,
-        stopStrings: [String],
-        epoch: Int,
         continuation: AsyncThrowingStream<String, any Error>.Continuation
     ) async {
         defer { cleanupProducer(key) }
         do {
-            let stream = try await engine.streamCompletion(of: messages, samplingConfig: sampling)
-            var assembler = StreamChunkAssembler(stopStrings: stopStrings, watchesThinkTags: true)
+            let stream = try await context.engine.streamCompletion(of: context.messages, samplingConfig: context.sampling)
+            var assembler = StreamChunkAssembler(stopStrings: context.stopStrings, watchesThinkTags: true)
             var stopped = false
             var hasEmitted = false  // First emission trims leading newlines.
 
@@ -347,7 +358,7 @@ final class TranslationService {
             }
 
             if !Task.isCancelled {
-                await stopEngineIfCurrent(epoch, engine: engine)
+                await stopEngineIfCurrent(context.epoch, engine: context.engine)
             }
             if !stopped && !assembler.inThinkBlock {
                 emit(assembler.flushRemaining(), suppress: false, hasEmitted: &hasEmitted, continuation: continuation)
@@ -356,7 +367,7 @@ final class TranslationService {
             }
             continuation.finish()
         } catch {
-            await stopEngineIfCurrent(epoch, engine: engine)
+            await stopEngineIfCurrent(context.epoch, engine: context.engine)
             finishAfterCancellation(error, continuation: continuation)
         }
     }

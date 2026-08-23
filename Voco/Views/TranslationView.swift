@@ -22,8 +22,10 @@ struct TranslationView: View {
 
     @State private var inputText: String = ""
     @State private var outputText: String = ""
-    @State private var sourceLanguage: Language = .english
-    @State private var targetLanguage: Language = .spanish
+    // Registry-backed language IDs — every advertised language is selectable,
+    // not just the legacy 12-case enum (S7-13).
+    @State private var sourceLanguageID = "en"
+    @State private var targetLanguageID = "es"
     @State private var isTranslating: Bool = false
     @State private var showShareSheet = false
     @State private var showCopyToast = false
@@ -50,12 +52,12 @@ struct TranslationView: View {
 
     /// Whether the source language supports offline STT (microphone input).
     private var sourceSupportsSTT: Bool {
-        languageRegistry.language(forID: sourceLanguage.rawValue)?.supportsOfflineSTT ?? false
+        sourceLanguage?.supportsOfflineSTT ?? false
     }
 
     /// Whether the target language supports offline TTS (speech output).
     private var targetSupportsTTS: Bool {
-        languageRegistry.language(forID: targetLanguage.rawValue)?.supportsOfflineTTS ?? false
+        targetLanguage?.supportsOfflineTTS ?? false
     }
 
     // MARK: - Services
@@ -71,6 +73,24 @@ struct TranslationView: View {
 
     private var activeModel: TranslationModel? {
         TranslationModel.availableModels.first { $0.id == lifecycleManager.activeModelID }
+    }
+
+    /// The model whose picker/translation constraints apply.
+    private var selectedModel: TranslationModel? {
+        TranslationModel.availableModels.first { $0.id == selectedModelID }
+    }
+
+    private var sourceLanguage: SupportedLanguage? {
+        languageRegistry.language(forID: sourceLanguageID)
+    }
+
+    private var targetLanguage: SupportedLanguage? {
+        languageRegistry.language(forID: targetLanguageID)
+    }
+
+    /// Languages the selected model can actually translate (nil = unrestricted).
+    var selectableLanguageIDs: Set<String>? {
+        selectedModel?.supportedLanguageCodes.map(Set.init)
     }
 
     private var canTranslate: Bool {
@@ -93,8 +113,9 @@ struct TranslationView: View {
                 VStack(spacing: 0) {
                     // Language selector
                     LanguageSelectorBar(
-                        sourceLanguage: $sourceLanguage,
-                        targetLanguage: $targetLanguage,
+                        sourceLanguageID: $sourceLanguageID,
+                        targetLanguageID: $targetLanguageID,
+                        allowedIDs: selectableLanguageIDs,
                         onSwap: swapLanguages
                     )
                     .padding(.horizontal, 20)
@@ -159,10 +180,10 @@ struct TranslationView: View {
         .onChange(of: inputText) { _, _ in
             translationComplete = false
         }
-        .onChange(of: sourceLanguage) { _, _ in
+        .onChange(of: sourceLanguageID) { _, _ in
             translationComplete = false
         }
-        .onChange(of: targetLanguage) { _, _ in
+        .onChange(of: targetLanguageID) { _, _ in
             translationComplete = false
         }
         .onChange(of: selectedModelID) { _, _ in
@@ -341,9 +362,9 @@ struct TranslationView: View {
             translationTask = nil
             isTranslating = false
         }
-        let temp = sourceLanguage
-        sourceLanguage = targetLanguage
-        targetLanguage = temp
+        let temp = sourceLanguageID
+        sourceLanguageID = targetLanguageID
+        targetLanguageID = temp
         if !outputText.isEmpty && !isTranslating {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 inputText = outputText
@@ -373,8 +394,8 @@ struct TranslationView: View {
     }
 
     private func speakOutput() {
-        guard !outputText.isEmpty else { return }
-        let voices = ttsService.availableVoices(forLanguage: targetLanguage.code)
+        guard !outputText.isEmpty, let targetLanguage else { return }
+        let voices = ttsService.availableVoices(forLanguage: targetLanguage.languageCode)
         ttsService.speak(outputText, voice: voices.first)
     }
 
@@ -392,7 +413,8 @@ struct TranslationView: View {
             guard granted else { return }
 
             do {
-                let locale = Locale(identifier: sourceLanguage.code)
+                guard let sourceLanguage else { return }
+                let locale = Locale(identifier: sourceLanguage.id)
                 let service = try SpeechService(locale: locale)
                 service.onTranscription = { text in
                     Task { @MainActor in
@@ -447,7 +469,14 @@ VocoLog.speech.error("[TranslationView] Speech error: \(error)")
         outputText = ""
         errorMessage = nil
 
-        let targetLang = targetLanguage.hunyuanTargetName
+        guard let srcLang = sourceLanguage, let tgtLang = targetLanguage else {
+            isTranslating = false
+            return
+        }
+        // Model-specific prompt naming (e.g. Hunyuan "Traditional Chinese").
+        let config = (activeModel ?? selectedModel)?.config
+        let targetLangName = config.map { languageRegistry.languageName(for: tgtLang, config: $0) }
+            ?? tgtLang.promptName
 
         translationTask = Task {
             // Accumulate chunks in an array instead of `fullOutput += chunk` —
@@ -463,8 +492,8 @@ VocoLog.speech.error("[TranslationView] Speech error: \(error)")
             do {
                 let stream = lifecycleManager.translateStream(
                     text,
-                    from: sourceLanguage.displayName,
-                    to: targetLang
+                    from: srcLang.promptName,
+                    to: targetLangName
                 )
 
                 for try await chunk in stream {

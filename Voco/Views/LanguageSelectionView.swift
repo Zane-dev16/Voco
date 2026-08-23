@@ -14,6 +14,9 @@ struct LanguageSelectionView: View {
 
     let title: String
     let selectedLanguageID: String?
+    /// When set, only these registry IDs are offered — the set of languages
+    /// the active model can actually translate.
+    var allowedIDs: Set<String>?
     let onSelect: (SupportedLanguage) -> Void
 
     @State private var searchText = ""
@@ -22,6 +25,11 @@ struct LanguageSelectionView: View {
     /// Filtered and grouped languages.
     private var filteredLanguages: [SupportedLanguage] {
         var langs = registry.languages
+
+        // Model support filter (S7-14): never offer a pair the model would botch.
+        if let allowedIDs {
+            langs = langs.filter { allowedIDs.contains($0.id) }
+        }
 
         // Filter by search text
         if !searchText.isEmpty {
@@ -81,6 +89,16 @@ struct LanguageSelectionView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .overlay {
+                if groupedLanguages.isEmpty {
+                    ContentUnavailableView(
+                        "No Matching Languages",
+                        systemImage: "globe",
+                        description: Text(searchText.isEmpty
+                            ? "This model doesn't support any known languages."
+                            : "No language matches '\(searchText)'."))
+                }
+            }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {

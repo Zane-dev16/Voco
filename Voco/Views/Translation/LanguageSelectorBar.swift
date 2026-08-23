@@ -10,25 +10,36 @@
 import SwiftUI
 
 struct LanguageSelectorBar: View {
-    @Binding var sourceLanguage: Language
-    @Binding var targetLanguage: Language
+    @Binding var sourceLanguageID: String
+    @Binding var targetLanguageID: String
+    /// Languages the active model can translate; nil = unrestricted. Rows
+    /// outside this set are not offered, so a selection can never be dropped.
+    var allowedIDs: Set<String>?
     /// Parent-side swap side effects (moving output back to input, etc.).
     /// Called inside the same animation block as the rotation.
     let onSwap: () -> Void
 
     @EnvironmentObject private var languageRegistry: LanguageRegistry
+
+    private var sourceLanguage: SupportedLanguage? {
+        languageRegistry.language(forID: sourceLanguageID)
+    }
+
+    private var targetLanguage: SupportedLanguage? {
+        languageRegistry.language(forID: targetLanguageID)
+    }
     @State private var showSourceLanguagePicker = false
     @State private var showTargetLanguagePicker = false
     @State private var swapRotation: Double = 0
 
     /// Whether the source language supports offline STT (microphone input).
     private var sourceSupportsSTT: Bool {
-        languageRegistry.language(forID: sourceLanguage.rawValue)?.supportsOfflineSTT ?? false
+        sourceLanguage?.supportsOfflineSTT ?? false
     }
 
     /// Whether the target language supports offline TTS (speech output).
     private var targetSupportsTTS: Bool {
-        languageRegistry.language(forID: targetLanguage.rawValue)?.supportsOfflineTTS ?? false
+        targetLanguage?.supportsOfflineTTS ?? false
     }
 
     var body: some View {
@@ -50,7 +61,7 @@ struct LanguageSelectorBar: View {
             .buttonStyle(.plain)
             .frame(width: 52)
             .accessibilityLabel("Swap languages")
-            .accessibilityValue("\(sourceLanguage.displayName) to \(targetLanguage.displayName)")
+            .accessibilityValue("\(sourceLanguage?.displayName ?? "") to \(targetLanguage?.displayName ?? "")")
             .accessibilityHint("Swaps the source and target languages")
 
             targetButton
@@ -64,7 +75,7 @@ struct LanguageSelectorBar: View {
             showSourceLanguagePicker = true
         } label: {
             HStack(spacing: 4) {
-                Text(sourceLanguage.displayName)
+                Text(sourceLanguage?.displayName ?? "Source")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 if !sourceSupportsSTT {
@@ -81,17 +92,17 @@ struct LanguageSelectorBar: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Source language")
         .accessibilityValue(
-            sourceSupportsSTT ? sourceLanguage.displayName : "\(sourceLanguage.displayName), typing only")
+            sourceSupportsSTT ? sourceLanguage?.displayName ?? ""
+                              : "\(sourceLanguage?.displayName ?? ""), typing only")
         .accessibilityHint("Changes the language text is translated from")
         .sheet(isPresented: $showSourceLanguagePicker) {
             LanguageSelectionView(
                 title: "Source Language",
-                selectedLanguageID: sourceLanguage.rawValue,
-                onSelect: { lang in
-                    if let legacy = Language(rawValue: lang.id) {
-                        sourceLanguage = legacy
-                    }
-                }
+                selectedLanguageID: sourceLanguageID,
+                allowedIDs: allowedIDs,
+                // Assign directly — no legacy-enum gate silently dropping most
+                // of the registry's languages after dismissal (S7-13).
+                onSelect: { sourceLanguageID = $0.id }
             )
             .environmentObject(languageRegistry)
         }
@@ -102,7 +113,7 @@ struct LanguageSelectorBar: View {
             showTargetLanguagePicker = true
         } label: {
             HStack(spacing: 4) {
-                Text(targetLanguage.displayName)
+                Text(targetLanguage?.displayName ?? "Target")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.blue)
                     .lineLimit(1)
@@ -120,19 +131,17 @@ struct LanguageSelectorBar: View {
         .sheet(isPresented: $showTargetLanguagePicker) {
             LanguageSelectionView(
                 title: "Target Language",
-                selectedLanguageID: targetLanguage.rawValue,
-                onSelect: { lang in
-                    if let legacy = Language(rawValue: lang.id) {
-                        targetLanguage = legacy
-                    }
-                }
+                selectedLanguageID: targetLanguageID,
+                allowedIDs: allowedIDs,
+                onSelect: { targetLanguageID = $0.id }
             )
             .environmentObject(languageRegistry)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Target language")
         .accessibilityValue(
-            targetSupportsTTS ? targetLanguage.displayName : "\(targetLanguage.displayName), no voice output")
+            targetSupportsTTS ? targetLanguage?.displayName ?? ""
+                              : "\(targetLanguage?.displayName ?? ""), no voice output")
         .accessibilityHint("Changes the language text is translated to")
     }
 }
