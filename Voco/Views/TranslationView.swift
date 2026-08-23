@@ -92,14 +92,26 @@ struct TranslationView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     // Language selector
-                    languageSelector
-                        .padding(.horizontal, 20)
-                        .padding(.top, 12)
-                        .padding(.bottom, 16)
+                    LanguageSelectorBar(
+                        sourceLanguage: $sourceLanguage,
+                        targetLanguage: $targetLanguage,
+                        onSwap: swapLanguages
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 16)
 
                     // Input area
-                    inputArea
-                        .padding(.horizontal, 20)
+                    TranslationInputCard(
+                        inputText: $inputText,
+                        isInputFocused: $isInputFocused,
+                        workspaceTextSize: workspaceTextSize,
+                        isRecording: isRecording,
+                        supportsSTT: sourceSupportsSTT,
+                        onToggleRecording: toggleRecording,
+                        onClear: clearInput
+                    )
+                    .padding(.horizontal, 20)
 
                     // Translate button
                     translateButton
@@ -130,9 +142,11 @@ struct TranslationView: View {
             // Error overlay
             if let error = errorMessage {
                 VStack {
-                    errorBanner(message: error)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
+                    ErrorBanner(message: error) {
+                        errorMessage = nil
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
                     Spacer()
                 }
             }
@@ -166,198 +180,6 @@ struct TranslationView: View {
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: [outputText])
         }
-    }
-
-    // MARK: - Language Selector
-
-    private var languageSelector: some View {
-        HStack(spacing: 0) {
-            // Source language button
-            Button {
-                showSourceLanguagePicker = true
-            } label: {
-                HStack(spacing: 4) {
-                    Text(sourceLanguage.displayName)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    if !sourceSupportsSTT {
-                        Text("⌨️")
-                            .font(.caption2)
-                            .accessibilityHidden(true)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(.tertiarySystemFill))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Source language")
-            .accessibilityValue(sourceSupportsSTT ? sourceLanguage.displayName : "\(sourceLanguage.displayName), typing only")
-            .accessibilityHint("Changes the language text is translated from")
-            .sheet(isPresented: $showSourceLanguagePicker) {
-                LanguageSelectionView(
-                    title: "Source Language",
-                    selectedLanguageID: sourceLanguage.rawValue,
-                    onSelect: { lang in
-                        if let legacy = Language(rawValue: lang.id) {
-                            sourceLanguage = legacy
-                        }
-                    }
-                )
-                .environmentObject(languageRegistry)
-            }
-
-            Button {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                    swapRotation += 180
-                    swapLanguages()
-                }
-            } label: {
-                Image(systemName: "arrow.left.arrow.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.blue)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .rotationEffect(.degrees(swapRotation))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 52)
-            .accessibilityLabel("Swap languages")
-            .accessibilityValue("\(sourceLanguage.displayName) to \(targetLanguage.displayName)")
-            .accessibilityHint("Swaps the source and target languages")
-
-            // Target language button
-            Button {
-                showTargetLanguagePicker = true
-            } label: {
-                HStack(spacing: 4) {
-                    Text(targetLanguage.displayName)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.blue)
-                        .lineLimit(1)
-                    if !targetSupportsTTS {
-                        Text("⌨️")
-                            .font(.caption2)
-                            .accessibilityHidden(true)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(.tertiarySystemFill))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .sheet(isPresented: $showTargetLanguagePicker) {
-                LanguageSelectionView(
-                    title: "Target Language",
-                    selectedLanguageID: targetLanguage.rawValue,
-                    onSelect: { lang in
-                        if let legacy = Language(rawValue: lang.id) {
-                            targetLanguage = legacy
-                        }
-                    }
-                )
-                .environmentObject(languageRegistry)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Target language")
-            .accessibilityValue(targetSupportsTTS ? targetLanguage.displayName : "\(targetLanguage.displayName), no voice output")
-            .accessibilityHint("Changes the language text is translated to")
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Input Area
-
-    private var inputArea: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TextEditor(text: $inputText)
-                .font(.system(size: workspaceTextSize, weight: .regular, design: .rounded))
-                .focused($isInputFocused)
-                .scrollContentBackground(.hidden)
-                // minHeight instead of fixed height so input isn't clipped
-                // at large Dynamic Type sizes.
-                .frame(minHeight: 140)
-                .accessibilityLabel("Text to translate")
-                .overlay(alignment: .topLeading) {
-                    if inputText.isEmpty {
-                        Text("Enter text to translate...")
-                            .font(.system(size: workspaceTextSize, weight: .regular, design: .rounded))
-                            .foregroundStyle(.tertiary)
-                            .padding(.top, 8)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-
-            HStack(spacing: 16) {
-                // Mic button — only shown if source language supports STT
-                if sourceSupportsSTT {
-                    Button {
-                        toggleRecording()
-                    } label: {
-                        Image(systemName: isRecording ? "waveform" : "mic.fill")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(isRecording ? .red : .blue)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                Circle()
-                                    .fill(isRecording ? Color.red.opacity(0.12) : Color.blue.opacity(0.12))
-                            )
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .symbolEffect(.pulse, options: .repeating, value: isRecording)
-                    .accessibilityLabel(isRecording ? "Stop recording" : "Dictate text")
-                }
-
-                Spacer()
-
-                // Clear / Paste
-                if !inputText.isEmpty {
-                    Button {
-                        translationTask?.cancel()
-                        translationTask = nil
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            inputText = ""
-                            outputText = ""
-                            isTranslating = false
-                            errorMessage = nil
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear text")
-                } else {
-                    Button {
-                        if let pasted = UIPasteboard.general.string {
-                            withAnimation(.spring(response: 0.3)) {
-                                inputText = pasted
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "doc.on.clipboard")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.blue)
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Paste from clipboard")
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 28)
-                .fill(Color(.secondarySystemGroupedBackground))
-                .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 4)
-        )
     }
 
     // MARK: - Translate Button
@@ -495,46 +317,20 @@ struct TranslationView: View {
         .accessibilityLabel(Text(label))
     }
 
-    // MARK: - Error Banner
-
-    private func errorBanner(message: String) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Error: \(message)")
-            Spacer()
-            Button {
-                withAnimation(.spring(response: 0.3)) {
-                    errorMessage = nil
-                }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss error")
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.orange.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-        )
-    }
-
     // MARK: - Actions
+
+    /// Clear button side effects — the input card owns the button, this view
+    /// owns cancelling in-flight work and resetting results.
+    private func clearInput() {
+        translationTask?.cancel()
+        translationTask = nil
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            inputText = ""
+            outputText = ""
+            isTranslating = false
+            errorMessage = nil
+        }
+    }
 
     private func swapLanguages() {
         let temp = sourceLanguage
@@ -699,79 +495,6 @@ VocoLog.speech.error("[TranslationView] Speech error: \(error)")
             }
         }
     }
-}
-
-// MARK: - Translating Dots Animation
-
-private struct TranslatingDots: View {
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<5) { dotIndex in
-                PulsingDot(delay: Double(dotIndex) * 0.1)
-            }
-        }
-    }
-}
-
-private struct PulsingDot: View {
-    let delay: Double
-    @State private var isActive = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Circle()
-            .fill(Color.blue)
-            .frame(width: 8, height: 8)
-            .opacity(isActive ? 1.0 : 0.25)
-            .offset(y: isActive ? -6 : 0)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(
-                    .easeInOut(duration: 0.45)
-                    .repeatForever(autoreverses: true)
-                    .delay(delay)
-                ) {
-                    isActive = true
-                }
-            }
-            .onDisappear {
-                // Reset the animation state so the repeatForever animation is
-                // released when the dots leave the hierarchy instead of
-                // continuing to tick off-screen.
-                isActive = false
-            }
-    }
-}
-
-// MARK: - Copy Toast
-
-private struct CopyToast: View {
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-            Text("Copied to clipboard")
-                .font(.subheadline.weight(.medium))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-// MARK: - Share Sheet
-
-private struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Preview
