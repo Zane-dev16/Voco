@@ -118,12 +118,20 @@ struct TranslationView: View {
     /// Hy-MT may be unsupported on Llama 3.2 — fall back to the defaults
     /// instead of letting an unsupported request through.
     private func sanitizePersistedLanguages() {
+        // Registry validity first — a persisted ID that no longer exists must
+        // reset even when the current model has no code restrictions (R7-07).
+        if languageRegistry.language(forID: sourceLanguageID) == nil { sourceLanguageID = "en" }
+        if languageRegistry.language(forID: targetLanguageID) == nil { targetLanguageID = "es" }
         guard let allowed = selectableLanguageIDs else { return }
-        if !allowed.contains(sourceLanguageID), allowed.contains("en") {
-            sourceLanguageID = "en"
+
+        // Model validity second — fall back to defaults only when allowed,
+        // otherwise to the first supported language rather than leaving an
+        // unsupported pick in place.
+        if !allowed.contains(sourceLanguageID) {
+            sourceLanguageID = allowed.contains("en") ? "en" : (allowed.sorted().first ?? "en")
         }
-        if !allowed.contains(targetLanguageID), allowed.contains("es") {
-            targetLanguageID = "es"
+        if !allowed.contains(targetLanguageID) {
+            targetLanguageID = allowed.contains("es") ? "es" : (allowed.sorted().first ?? "es")
         }
         recentTargetIDsRaw = recentTargetIDs.filter { allowed.contains($0) }.joined(separator: ",")
     }
@@ -225,7 +233,6 @@ struct TranslationView: View {
             sanitizePersistedLanguages()
         }
         .onChange(of: targetLanguageID) { _, newID in
-            translationComplete = false
             // Recent targets, most-recent-first, deduped, capped at 4.
             var updated = [newID]
             for recentID in recentTargetIDs where recentID != newID && updated.count < 4 {
@@ -236,6 +243,10 @@ struct TranslationView: View {
         .onDisappear {
             // Stop the toast hide timer so it can't fire after the view is gone.
             copyToastHideTask?.cancel()
+            // Release the microphone if the view tears down mid-dictation
+            // (model switch unmounts this view) — the completion callbacks
+            // that normally clean up will never fire then (R7-04).
+            stopRecording()
         }
         .onChange(of: inputText) { _, _ in
             translationComplete = false
@@ -243,9 +254,8 @@ struct TranslationView: View {
         .onChange(of: sourceLanguageID) { _, _ in
             translationComplete = false
         }
-        .onChange(of: targetLanguageID) { _, _ in
-            translationComplete = false
-        }
+        // (targetLanguageID's completion reset lives in its other handler,
+        // which also maintains the recents list — single writer, R7-08.)
         .onChange(of: selectedModelID) { _, _ in
             // Model switches change the allowed language set — re-validate the
             // persisted pair against it before anything else uses it.

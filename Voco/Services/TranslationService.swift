@@ -206,7 +206,8 @@ final class TranslationService {
                 text: text,
                 sourceLanguage: sourceLanguage,
                 targetLanguage: targetLanguage,
-                config: model.config
+                config: model.config,
+                registry: LanguageRegistry.shared
             )
             return makeRawTokenStream(RawStreamContext(
                 engine: engine,

@@ -29,12 +29,17 @@ struct OnboardingView: View {
         return 0
     }
 
-    /// Whether a download is currently in flight.
+    /// Whether a download or post-download verification is in flight.
+    /// `.processing` (SHA-256 hashing) counts: the file is on disk but not
+    /// loadable yet, and starting an activation now would either hang on the
+    /// fan-in or load an unverified GGUF (R7-05).
     private var isDownloading: Bool {
-        if case .downloading = downloadManager.downloadStates[model.id] {
+        switch downloadManager.downloadStates[model.id] {
+        case .downloading, .processing:
             return true
+        default:
+            return false
         }
-        return false
     }
 
     var body: some View {

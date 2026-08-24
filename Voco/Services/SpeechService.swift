@@ -5,7 +5,7 @@
 //  Created by Irell Zane on 14/05/2026.
 //
 
-import AVFoundation
+@preconcurrency import AVFoundation
 import Speech
 import OSLog
 
@@ -76,6 +76,16 @@ final class SpeechService {
         }
 
         self.speechRecognizer = recognizer
+    }
+
+    deinit {
+        // Last-resort teardown if the owner disappears without calling
+        // stopRecording(): release the tap, engine, and the .record session so
+        // the mic indicator doesn't stay lit process-wide (R7-04). Immutable
+        // lets are safe to touch from nonisolated deinit.
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     // MARK: - Permission

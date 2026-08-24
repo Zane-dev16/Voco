@@ -67,14 +67,24 @@ enum PromptBuilder {
             .replacingOccurrences(of: "{text}", with: text)
     }
 
-    /// Formats a raw prompt for streaming (simpler language resolution than batch translate).
+    /// Formats a raw prompt for streaming. Mirrors formatRawPrompt's registry
+    /// resolution so both raw paths name languages consistently (R7-06) — the
+    /// legacy 12-case enum lookup silently rewrote "Chinese (Simplified)" to
+    /// "Chinese" while passing Traditional Chinese/Cantonese through verbatim.
     static func formatRawPromptForStream(
         text: String,
         sourceLanguage: String,
         targetLanguage: String,
-        config: ModelConfiguration
+        config: ModelConfiguration,
+        registry: LanguageRegistry? = nil
     ) -> String {
-        let resolvedTarget = Language.find(byDisplayOrHunyuanName: targetLanguage)?.hunyuanTargetName ?? targetLanguage
+        let resolvedTarget: String
+        if let registry,
+           let targetLang = registry.language(byName: targetLanguage) {
+            resolvedTarget = registry.languageName(for: targetLang, config: config)
+        } else {
+            resolvedTarget = targetLanguage
+        }
         return config.prompt.userPromptTemplate
             .replacingOccurrences(of: "{source}", with: sourceLanguage)
             .replacingOccurrences(of: "{target}", with: resolvedTarget)
