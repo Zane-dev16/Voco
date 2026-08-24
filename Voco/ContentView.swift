@@ -57,6 +57,8 @@ struct ContentView: View {
                 Task { await lifecycleManager.handleWillEnterForeground() }
                 // Re-sync cached disk facts after possible external changes.
                 downloadManager.refreshCaches()
+                // Voice packs may have installed in the meantime.
+                languageRegistry.refreshCapabilitiesIfNeeded()
             default:
                 break
             }
@@ -67,16 +69,13 @@ struct ContentView: View {
         guard let model = TranslationModel.availableModels.first(where: { $0.id == modelID }) else { return }
         guard downloadManager.isModelDownloaded(model) else { return }
         guard lifecycleManager.activeModelID != modelID else { return }
-        Task {
-            do {
-                try await lifecycleManager.activate(model)
-            } catch is CancellationError {
-                return
-            } catch {
-                VocoLog.models.error("[ContentView] Auto-activation failed for \(model.id): \(error)")
-                activationErrorMessage = "\(model.displayName) could not be activated. \(error.localizedDescription)"
-                showActivationError = true
-            }
+        // Single-owner activation entry point (R7-09) so launch-time
+        // activation participates in the same cancellation/generation scheme
+        // as every other path.
+        lifecycleManager.performActivation(model, onSuccess: {}) { message in
+            VocoLog.models.error("[ContentView] Auto-activation failed for \(model.id): \(message)")
+            activationErrorMessage = "\(model.displayName) could not be activated. \(message)"
+            showActivationError = true
         }
     }
 }

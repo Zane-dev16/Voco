@@ -95,12 +95,24 @@ final class LanguageRegistry: ObservableObject {
     /// capability flags fill in shortly after launch (UI already renders
     /// transient text-only states).
     private func probeCapabilitiesInBackground() {
+        lastProbeStarted = ContinuousClock.now
         let langs = languages
         Task.detached(priority: .userInitiated) {
             let sttIDs = Self.detectSTTCapabilities(for: langs)
             let ttsIDs = Self.detectTTSCapabilities(for: langs)
             await self.applyCapabilities(sttIDs: sttIDs, ttsIDs: ttsIDs)
         }
+    }
+
+    /// When the last probe started, to throttle foreground refreshes.
+    private var lastProbeStarted = ContinuousClock.now
+
+    /// Re-runs capability detection (R7-10): iOS can install voice packs or
+    /// change speech availability while we run, leaving the 🎤/⌨️ glyphs stale.
+    /// Throttled — the probe constructs ~70 recognizers.
+    func refreshCapabilitiesIfNeeded(minInterval: Duration = .seconds(60)) {
+        guard ContinuousClock.now - lastProbeStarted >= minInterval else { return }
+        probeCapabilitiesInBackground()
     }
 
     // MARK: - Language List
