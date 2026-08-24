@@ -42,6 +42,13 @@ struct OnboardingView: View {
         }
     }
 
+    /// SHA-256 hashing phase specifically — shown as indeterminate work with
+    /// its own copy rather than a stuck "Downloading... 0%" bar.
+    private var isVerifyingChecksum: Bool {
+        if case .processing = downloadManager.downloadStates[model.id] { return true }
+        return false
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -95,8 +102,20 @@ struct OnboardingView: View {
             .disabled(isDownloading || isActivating)
             .padding(.horizontal, 32)
 
-            // Progress bar (only visible during download)
-            if isDownloading {
+            // Progress (visible during download and verification)
+            if isVerifyingChecksum {
+                VStack(spacing: 6) {
+                    ProgressView()
+                        .tint(model.providerColor)
+                        .padding(.horizontal, 32)
+                        .accessibilityLabel("Verifying \(model.displayName)")
+
+                    Text("Checking integrity of \(model.formattedSize)…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.bottom, 8)
+            } else if isDownloading {
                 VStack(spacing: 6) {
                     ProgressView(value: downloadProgress)
                         .tint(model.providerColor)
@@ -150,6 +169,7 @@ struct OnboardingView: View {
 
     private var buttonLabel: String {
         if showSuccess { return "Engine Ready" }
+        if isVerifyingChecksum { return "Verifying checksum…" }
         if isDownloading { return "Downloading... \(Int(downloadProgress * 100))%" }
         if isActivating { return "Activating Neural Engine..." }
         if downloadManager.isModelDownloaded(model) { return "Activate" }

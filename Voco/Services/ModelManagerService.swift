@@ -144,9 +144,10 @@ final class ModelManagerService {
     }
 
     /// Async wrapper — returns local URL on success. Uses continuation to avoid polling.
-    /// Cancelling the awaiting Task cancels the underlying URLSessionDownloadTask
-    /// (via cancelDownload), so an abandoned multi-GB activation stops downloading
-    /// instead of finishing in the background and loading the wrong model.
+    /// Cancelling the awaiting Task stops the underlying URLSessionDownloadTask
+    /// via cancelDownload when no sibling waiter remains (fan-in consumers keep
+    /// a shared transfer alive), so an abandoned multi-GB activation stops
+    /// downloading instead of finishing in the background.
     func downloadAsync(_ model: TranslationModel) async throws -> URL {
         if let targetURL = localURL(for: model) { return targetURL }
 
@@ -236,10 +237,17 @@ final class ModelManagerService {
               var list = asyncWaiters[modelID],
               let index = list.firstIndex(where: { $0.id == waiterID }) else { return }
         let cancelled = list.remove(at: index)
-        if list.isEmpty {
+        let isLastWaiter = list.isEmpty
+        if isLastWaiter {
             asyncWaiters.removeValue(forKey: modelID)
         } else {
             asyncWaiters[modelID] = list
+        }
+        // Original contract (restored): cancelling the awaiting activation
+        // stops the multi-GB transfer — but only when no sibling waiter
+        // remains; otherwise the shared outcome still has consumers.
+        if isLastWaiter, downloadTasks[modelID] != nil {
+            cancelDownload(for: modelID)
         }
         cancelled.continuation.resume(throwing: CancellationError())
     }

@@ -233,6 +233,7 @@ struct TranslationView: View {
             sanitizePersistedLanguages()
         }
         .onChange(of: targetLanguageID) { _, newID in
+            translationComplete = false
             // Recent targets, most-recent-first, deduped, capped at 4.
             var updated = [newID]
             for recentID in recentTargetIDs where recentID != newID && updated.count < 4 {
