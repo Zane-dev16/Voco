@@ -40,18 +40,29 @@ final class ModelManagerService {
     private(set) var cachedDiskUsageBytes: Int64 = 0
     private(set) var cachedDownloadedIDs: Set<String> = []
 
-    /// Identities for downloadAsync waiters so a cancelling task can remove
-    /// exactly its own entry.
-    private final class DownloadWaiter {
-        let continuation: CheckedContinuation<URL, Error>
-        init(continuation: CheckedContinuation<URL, Error>) {
-            self.continuation = continuation
-        }
-    }
-
     /// downloadAsync callers awaiting an in-flight download. They fan in on the
     /// shared outcome instead of failing with a misleading error (S7-22).
+    private struct DownloadWaiter {
+        let id = UUID()
+        let continuation: CheckedContinuation<URL, Error>
+    }
+
+    /// Hands the cancelling task the identity of the waiter it registered, so
+    /// cancelWaiter removes exactly that entry (R7-02) instead of an arbitrary
+    /// sibling. Written by the continuation body, read by onCancel — both hops
+    /// land on the main actor.
+    private final class WaiterRegistration: @unchecked Sendable {
+        var waiterID: UUID?
+    }
+
+    /// downloadAsync callers awaiting an in-flight download, keyed by model.
     private var asyncWaiters: [String: [DownloadWaiter]] = [:]
+
+    /// Models whose on-disk file is loadable: adopted at launch (size-checked)
+    /// or checksum-verified after a this-session download (R7-05). A file that
+    /// just finished transferring is NOT trusted until its SHA-256 passes, so
+    /// the hashing window can't hand an unverifiable GGUF to the loader.
+    private var sessionTrustedModelIDs: Set<String> = []
 
     init() {
         let config = URLSessionConfiguration.default
@@ -89,22 +100,7 @@ final class ModelManagerService {
             }
         } onComplete: { [weak self] result in
             Task { @MainActor in
-                switch result {
-                case .success(let url):
-                    if FileManager.default.fileExists(atPath: url.path) {
-                        self?.downloadStates[modelID] = .downloaded
-                    } else {
-                        self?.downloadStates[modelID] = .failed("Downloaded file not found at destination")
-                    }
-                case .failure(let error):
-                    // A cancelled download was already reset to .notDownloaded
-                    // by cancelDownload(for:) — don't turn it into an error state.
-                    if !Self.isCancellation(error) {
-                        self?.downloadStates[modelID] = .failed(error.localizedDescription)
-                    }
-                }
-                self?.refreshCaches()
-                self?.downloadTasks.removeValue(forKey: modelID)
+                self?.finishDownloadTask(for: modelID, result: result)
             }
         }
         _ = task
@@ -156,6 +152,8 @@ final class ModelManagerService {
 
         let modelID = model.id
 
+        let registration = WaiterRegistration()
+
         return try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
                 // Cancel-before-entry race: the handler already fired.
@@ -165,6 +163,7 @@ final class ModelManagerService {
                 }
 
                 let waiter = DownloadWaiter(continuation: continuation)
+                registration.waiterID = waiter.id
                 asyncWaiters[modelID, default: []].append(waiter)
 
                 // Already downloading? Fan in on its shared outcome (S7-22).
@@ -180,17 +179,7 @@ final class ModelManagerService {
                     },
                     onComplete: { [weak self] result in
                         Task { @MainActor in
-                            switch result {
-                            case .success:
-                                self?.downloadStates[modelID] = .downloaded
-                            case .failure(let err):
-                                self?.downloadStates[modelID] = Self.isCancellation(err)
-                                    ? .notDownloaded
-                                    : .failed(err.localizedDescription)
-                            }
-                            self?.flushWaiters(for: modelID, with: result)
-                            self?.refreshCaches()
-                            self?.downloadTasks.removeValue(forKey: modelID)
+                            self?.finishDownloadTask(for: modelID, result: result)
                         }
                     }
                 )
@@ -198,9 +187,33 @@ final class ModelManagerService {
         }, onCancel: { [weak self] in
             // Runs synchronously, possibly off the main actor — hop to it.
             Task { @MainActor [weak self] in
-                self?.cancelWaiter(modelID: modelID)
+                self?.cancelWaiter(modelID: modelID, registration: registration)
             }
         })
+    }
+
+    /// Single terminal handler for every finished transfer regardless of which
+    /// API started it (R7-03): state write, waiter fan-out, cache refresh, and
+    /// task deregistration happen together, exactly once per download.
+    private func finishDownloadTask(for modelID: String, result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            if FileManager.default.fileExists(atPath: url.path) {
+                downloadStates[modelID] = .downloaded
+                // The delegate verifies SHA-256 before reporting success — the
+                // file is loadable from here on (R7-05).
+                sessionTrustedModelIDs.insert(modelID)
+            } else {
+                downloadStates[modelID] = .failed("Downloaded file not found at destination")
+            }
+        case .failure(let err):
+            downloadStates[modelID] = Self.isCancellation(err)
+                ? .notDownloaded
+                : .failed(err.localizedDescription)
+        }
+        flushWaiters(for: modelID, with: result)
+        refreshCaches()
+        downloadTasks.removeValue(forKey: modelID)
     }
 
     /// Resumes every downloadAsync waiter with the shared outcome, exactly once.
@@ -216,11 +229,13 @@ final class ModelManagerService {
         }
     }
 
-    /// Removes and fails one waiter whose awaiting task was cancelled, without
-    /// disturbing siblings or the shared transfer.
-    private func cancelWaiter(modelID: String) {
-        guard var list = asyncWaiters[modelID], !list.isEmpty else { return }
-        let cancelled = list.removeFirst()
+    /// Removes and fails exactly the waiter registered by the cancelling task
+    /// (identity-matched, R7-02), never an arbitrary sibling.
+    private func cancelWaiter(modelID: String, registration: WaiterRegistration) {
+        guard let waiterID = registration.waiterID,
+              var list = asyncWaiters[modelID],
+              let index = list.firstIndex(where: { $0.id == waiterID }) else { return }
+        let cancelled = list.remove(at: index)
         if list.isEmpty {
             asyncWaiters.removeValue(forKey: modelID)
         } else {
@@ -253,6 +268,7 @@ final class ModelManagerService {
         }
         downloadStates[model.id] = .notDownloaded
         downloadDelegate.clearResumeData(for: model.id)
+        sessionTrustedModelIDs.remove(model.id)
         refreshCaches()
     }
 
@@ -278,8 +294,14 @@ final class ModelManagerService {
         cachedDownloadedIDs.contains(model.id)
     }
 
+    /// Loader-facing resolution. Files downloaded THIS SESSION become loadable
+    /// only after their SHA-256 verified (finishDownloadTask) — during the
+    /// hashing window this gate keeps an unverified GGUF away from the engine,
+    /// which would otherwise race its post-failure deletion (R7-05). Launch-time
+    /// adoptions are trusted on size alone (scanExistingModels seeds the set).
     func localURL(for model: TranslationModel) -> URL? {
-        adoptedFileURL(for: model)
+        guard sessionTrustedModelIDs.contains(model.id) else { return nil }
+        return adoptedFileURL(for: model)
     }
 
     func totalDiskUsage() -> Int64 {
@@ -306,8 +328,12 @@ VocoLog.models.error("Failed to create models directory: \(error)")
 
     private func scanExistingModels() {
         for model in TranslationModel.availableModels {
-            if isModelDownloaded(model) {
+            // Consult the disk directly, NOT the cache-backed isModelDownloaded:
+            // init order must not matter (R7-01 — reading the empty cache before
+            // refreshCaches() filled it reset every installed model at launch).
+            if adoptedFileURL(for: model) != nil {
                 downloadStates[model.id] = .downloaded
+                sessionTrustedModelIDs.insert(model.id)
             } else if downloadStates[model.id] == nil || downloadStates[model.id] == .downloaded {
                 // Missing or corrupt (failed adoption) — reset stale markers.
                 downloadStates[model.id] = .notDownloaded
