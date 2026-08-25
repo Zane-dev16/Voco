@@ -103,4 +103,49 @@ struct ModelRegistryTests {
     private func registryContains(_ id: String) -> Bool {
         LanguageRegistry.shared.language(forID: id) != nil
     }
+
+    @Test("Llama 3.2 models match Meta's officially supported languages")
+    func llamaOfficialLanguages() {
+        // Meta's Llama 3.2 model card: only 8 languages are officially
+        // supported; broader coverage is explicitly not guaranteed.
+        let official: Set<String> = ["en", "de", "fr", "it", "pt", "hi", "es", "th"]
+        for model in models where model.provider == "Meta" {
+            #expect(Set(model.supportedLanguageCodes ?? []) == official,
+                    "\(model.id) diverges from Meta's official 8-language list")
+        }
+    }
+
+    @Test("TranslateGemma matches the WMT24++ evaluation matrix")
+    func translateGemmaMatrix() {
+        // TranslateGemma technical report (arXiv 2601.09012, Table 4): 55
+        // WMT24++ languages; regional variants collapse to registry IDs and
+        // English is included as a source side.
+        let expected: Set<String> = [
+            "en", "ar", "bg", "bn", "ca", "cs", "da", "de", "el", "es",
+            "et", "fa", "fi", "tl", "fr", "gu", "he", "hi", "hr", "hu",
+            "id", "is", "it", "ja", "kn", "ko", "lt", "lv", "ml", "mr",
+            "nl", "nb", "pa", "pl", "pt", "ro", "ru", "sk", "sl", "sr",
+            "sv", "sw", "ta", "te", "th", "tr", "uk", "ur", "vi", "zh",
+            "zh-TW", "zu",
+        ]
+        for model in models where model.id.hasPrefix("translategemma") {
+            #expect(Set(model.supportedLanguageCodes ?? []) == expected,
+                    "\(model.id) diverges from TranslateGemma's documented matrix")
+        }
+    }
+
+    @Test("Qwen and Gemma curated lists stay within claimed broad coverage")
+    func broadCoverageModelsStayWithinClaims() {
+        // Qwen3.5 claims 201 languages, Gemma 4 claims 140+ — no per-size
+        // matrices exist, so these carry curated practical lists. Guard that
+        // they never claim MORE than the broad families cover: spot-check the
+        // registry-only additions (yue, bo, kk, mn, ug are Hy-MT ethnic/dialect
+        // set entries) don't appear on models whose providers don't list them.
+        let hyMTOnly: Set<String> = ["bo", "kk", "mn", "ug"]
+        for model in models where model.provider != "Tencent" {
+            let codes = Set(model.supportedLanguageCodes ?? [])
+            #expect(codes.isDisjoint(with: hyMTOnly),
+                    "\(model.id) claims Hy-MT ethnic/dialect languages")
+        }
+    }
 }

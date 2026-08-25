@@ -162,6 +162,7 @@ final class LanguageRegistry: ObservableObject {
         add("tr", "Turkish", "\u{1F1F9}\u{1F1F7}", hunyuan: "Turkish", native: "Türkçe")
         add("ca", "Catalan", "\u{1F1E8}\u{1F1F4}", native: "Català")
         add("gl", "Galician", "\u{1F1EC}\u{1F1FA}", native: "Galego")
+        add("is", "Icelandic", "\u{1F1EE}\u{1F1F8}", native: "Íslenska")
 
         // --- Asian Languages ---
         add("zh", "Chinese (Simplified)", "\u{1F1E8}\u{1F1F3}", hunyuan: "Chinese", native: "简体中文", bcp47: "zh-CN")
