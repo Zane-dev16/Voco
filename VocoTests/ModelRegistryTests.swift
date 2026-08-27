@@ -79,14 +79,29 @@ struct ModelRegistryTests {
         "bn", "ta", "uk", "bo", "kk", "mn", "ug", "yue",
     ]
 
-    @Test("Tencent HY-MT models match the official language matrix")
+    /// Languages empirically broken on-device and therefore removed from a
+    /// model's list despite being in Tencent's official HY-MT matrix.
+    /// Evidence: physical-device sweep logs, see /Users/irellzane/Work/voco/device-matrix-logs
+    /// and commit history (2026-08-27). Each entry failed repeatedly
+    /// (2-3/3 runs) with empty output or wrong-language fallback.
+    private static let hyMTEmpiricalDrops: [String: Set<String>] = [
+        // en->ug answers fluent English instead of translating (3/3 runs).
+        "hy-mt2-1.8b-stq": ["ug"],
+        // en->kk prints Hindi text (2/2), en->yue mixed-script garbage (2/2).
+        // yue remains available via hy-mt2, which translates it correctly.
+        "hy-mt1.5-1.8b-q4km": ["kk", "yue"],
+    ]
+
+    @Test("Tencent HY-MT models match the official matrix minus verified-on-device drops")
     func hyMTMatrixMatchesOfficial() {
         let hyMTModels = models.filter { $0.provider == "Tencent" }
         #expect(!hyMTModels.isEmpty)
         for model in hyMTModels {
             let codes = Set(model.supportedLanguageCodes ?? [])
-            #expect(codes == Self.hyMTOfficialCodes,
-                    "\(model.id) codes diverge from Tencent HY-MT matrix; extra: \(codes.subtracting(Self.hyMTOfficialCodes)), missing: \(Self.hyMTOfficialCodes.subtracting(codes))")
+            let expected = Self.hyMTOfficialCodes
+                .subtracting(Self.hyMTEmpiricalDrops[model.id] ?? [])
+            #expect(codes == expected,
+                    "\(model.id) codes diverge; extra: \(codes.subtracting(expected)), missing: \(expected.subtracting(codes))")
         }
     }
 
@@ -132,6 +147,21 @@ struct ModelRegistryTests {
             #expect(Set(model.supportedLanguageCodes ?? []) == expected,
                     "\(model.id) diverges from TranslateGemma's documented matrix")
         }
+    }
+
+    @Test("Qwen3.5-0.8B excludes non-Latin scripts that fail on-device")
+    func qwenSmallQuantTrimmed() {
+        // On-device sweep: every non-Latin-script pair returns deterministic
+        // empty output on the Q8_0 0.8B build (2/2 runs). Latin pairs pass.
+        guard let model = models.first(where: { $0.id == "qwen3.5-0.8b-q8" }) else {
+            #expect(Bool(false), "qwen3.5-0.8b-q8 missing from registry")
+            return
+        }
+        let codes = Set(model.supportedLanguageCodes ?? [])
+        let brokenScripts: Set<String> = ["zh", "zh-TW", "ja", "ko", "bn", "hi", "ta", "ur", "ru", "ar", "vi", "th"]
+        #expect(codes.isDisjoint(with: brokenScripts),
+                "0.8B re-added languages that returned empty output on-device: \(codes.intersection(brokenScripts))")
+        #expect(codes.contains("en") && codes.contains("id"), "working pairs must stay")
     }
 
     @Test("Qwen and Gemma curated lists stay within claimed broad coverage")
