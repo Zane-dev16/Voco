@@ -1,29 +1,10 @@
-# Voco Offline Privacy-First AI Translation
+# Voco
 
-**An iOS app that runs translation models entirely on-device, with no data
-leaving your iPhone.**
+Voco is an iOS app that runs translation models entirely on device. Translation works offline after the first model download. The build targets Apple Silicon with ARM NEON, and supports 10 downloadable models listed in the registry.
 
-## Supported Models
+## Setup
 
-Voco ships with 10 downloadable translation models from 4 providers:
-
-| Provider | Models | Quantizations |
-| ---------- | -------- | --------------- |
-| Tencent | Hy-MT1.5 1.8B, Hy-MT2 1.8B | STQ1_0 1.25-bit, Q4_K_M |
-| Meta | Llama 3.2 1B, Llama 3.2 3B | Q8_0, IQ3_M |
-| Qwen | Qwen3.5 0.8B, 2B, 4B | Q8_0, Q4_K_M |
-| Google | Gemma 4 E2B, Gemma 4 E4B, TranslateGemma 4B | Q4_K_M, Q2_K |
-
-See [MODEL_REGISTRY.md](MODEL_REGISTRY.md) for the full catalog.
-
-## Requirements
-
-- iOS 17.0 or later
-- iPhone (optimized for Apple Silicon / ARM NEON)
-- ~500 MB free storage for the smallest model; ~5 GB for the largest
-- Internet connection for initial model download only — all translation is offline
-
-## Build
+Requirements: iOS 17.0 or later, an iPhone, and 500 MB to 5 GB of free storage depending on the model. The internet is needed only for the first model download.
 
 ```bash
 git clone https://github.com/Zane-dev16/Voco.git
@@ -31,27 +12,18 @@ cd Voco
 xcodebuild -scheme Voco -destination 'platform=iOS Simulator,name=iPhone' build
 ```
 
-Replace `iPhone` with any installed simulator — list them with
-`xcrun simctl list devices available`.
+Replace `iPhone` with any installed simulator. List them with `xcrun simctl list devices available`.
 
-> The bundled `llama.xcframework` contains arm64 slices only (device +
-> simulator). If you build with the generic destination
-> (`generic/platform=iOS Simulator`), pass `ARCHS=arm64` or the x86_64 slice
-> will fail to link.
+The bundled `llama.xcframework` contains arm64 slices only (device and simulator). If you build with the generic destination (`generic/platform=iOS Simulator`), pass `ARCHS=arm64` or the x86_64 slice fails to link.
 
-The project uses a local Swift package at `Packages/swift-llama-cpp/` wrapping
-a custom `llama.cpp` build (PR #22836, STQ1_0 kernel). No additional dependencies.
+The project uses a local Swift package at `Packages/swift-llama-cpp/` wrapping a custom `llama.cpp` build. No additional dependencies.
+
+See MODEL_REGISTRY.md, MODEL_RUNTIME_GUIDE.md, and MEMORY_LIFECYCLE_AUDIT.md for the model catalog, runtime notes, and memory audit.
 
 ## Privacy
 
-All translation runs on-device. No text, audio, or analytics data leaves your
-iPhone. Model weights are downloaded directly from HuggingFace on first use and
-cached locally. No account required.
+Translation runs on device, and no text, audio, or analytics data leaves the phone. Model weights download directly from HuggingFace on first use and are cached locally. No account is required.
 
 ## License
 
-Voco is MIT licensed. See [LICENSE](LICENSE).
-
-Individual model weights are distributed under their respective provider licenses
-(Tencent Hunyuan, Llama 3.2 Community, Apache 2.0, Gemma). License details are
-available in-app under Settings → Models & Licenses.
+Voco is MIT licensed. See LICENSE. Model weights keep their own provider licenses, listed in the app under Settings and Models and Licenses.
