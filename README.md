@@ -2,6 +2,8 @@
 
 Voco is an iOS app that runs translation models entirely on device. Translation works offline after the first model download. The build targets Apple Silicon with ARM NEON, and supports 10 downloadable models listed in the registry.
 
+Download it from the App Store: https://apps.apple.com/sa/app/voco-local-ai-translator/id6778784439
+
 ## Setup
 
 Requirements: iOS 17.0 or later, an iPhone, and 500 MB to 5 GB of free storage depending on the model. The internet is needed only for the first model download.
